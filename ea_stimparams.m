@@ -128,7 +128,7 @@ if strcmp(options.leadprod, 'group')
     isdirected=0; % for now allow everything in lead group
 else
     e=load(fullfile(ea_getearoot,'templates','electrode_models',options.elspec.matfname));
-    directed_funs={'ea_genvat_horn','ea_genvat_fastfield'};
+    directed_funs={'ea_genvat_horn','ea_genvat_fastfield','ea_genvat_aniso'};
     if isfield(e.electrode,'isdirected')
         isdirected=e.electrode.isdirected;
     else
@@ -156,7 +156,7 @@ for nd=length(ndir):-1:1
     end
 end
 setappdata(gcf,'genvatfunctions',genvatfunctions);
-
+setappdata(handles.stimfig,'genvatfunctions', genvatfunctions);
 set(handles.modelselect,'String',ndc);
 
 % if ~isempty(stimparams) % stimfigure has been used before..
@@ -2183,6 +2183,13 @@ end
 %end
 
 switch model
+    case 'Anisotropic'
+        ea_hide_impedance(handles);
+        set(handles.estimateInTemplate,'Visible','off');
+        S.monopolarmodel=0;
+        ea_enable_vas(handles,options);
+        set(handles.betawarning,'visible','off');
+        set(handles.settings,'visible','on');
     case 'SimBio/FieldTrip (see Horn 2017)'
         ea_hide_impedance(handles);
         set(handles.estimateInTemplate,'Visible','on');
@@ -3238,6 +3245,8 @@ catch
     model=models{1};
 end
 switch model
+    case 'Anisotropic'
+        ea_vatsettings_aniso;
     case 'SimBio/FieldTrip (see Horn 2017)'
         ea_vatsettings_horn;
     case 'Dembek 2017'
