@@ -65,7 +65,7 @@ prefs=ea_prefs('');
 set(handles.ethresh,'String',num2str(prefs.machine.vatsettings.horn_ethresh));
 options=ea_defaultoptions;
 
-set(handles.removeElectrode,'Value',prefs.machine.vatsettings.horn_removeElectrode);
+set(handles.removeElectrode,'Value',prefs.machine.vatsettings.aniso_removeElectrode);
 
 ea_fillpresetpopups(handles);
 
@@ -163,7 +163,7 @@ prefs=ea_prefs('');
 
 vatsettings=prefs.machine.vatsettings;
 vatsettings.horn_ethresh=str2double(get(handles.ethresh,'String'));
-vatsettings.horn_removeElectrode=get(handles.removeElectrode,'Value');
+vatsettings.aniso_removeElectrode=get(handles.removeElectrode,'Value');
 ea_setprefs('vatsettings',vatsettings);
 
 delete(handles.setfig);
@@ -290,4 +290,4 @@ function removeElectrode_Callback(hObject, eventdata, handles)
 % handles    structure with handles and user data (see GUIDATA)
 
 % Hint: get(hObject,'Value') returns toggle state of removeElectrode
-ea_setprefs('vatsettings.horn_removeElectrode',get(handles.removeElectrode,'Value'));
+ea_setprefs('vatsettings.aniso_removeElectrode',get(handles.removeElectrode,'Value'));

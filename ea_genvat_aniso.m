@@ -1,14 +1,10 @@
 function varargout = ea_genvat_aniso(varargin)
 % this function is called at line 1059 of function ea_stimparams.m in the
 % following fashion:
-% [stimparams(1,side).VAT(el).VAT,volume]=feval(ea_genvat,elstruct(el).coords_mm,getappdata(handles.stimfig,'S'),side,options,stimname,options.prefs.machine.vatsettings.horn_ethresh,handles.stimfig);
+% [stimparams(1,side).VAT(el).VAT,volume]=feval(ea_genvat,elstruct(el).coords_mm,getappdata(handles.stimfig,'S'),side,options,stimname,options.prefs.machine.vatsettings.aniso_ethresh,handles.stimfig);
 % 
-% TODO: implement a GUI to select the DTI to give in input to the function
 % TODO: implement saving of the headmodel and the possibility to just load
 %       it in case it is present
-% TODO: check if it's better to run the function in MNI space or in patient
-%       space and understand if the transformations I'm using concern
-%       patient or MNI space
 %
 
 if nargin==5
@@ -17,7 +13,7 @@ if nargin==5
     side=varargin{3};
     options=varargin{4};
     stimname=varargin{5};
-    thresh=options.prefs.machine.vatsettings.horn_ethresh; %0.2;
+    thresh=options.prefs.machine.vatsettings.aniso_ethresh; %0.2;
     
 elseif nargin==7
     coords=varargin{1};
@@ -37,13 +33,12 @@ end
 
 % convention used to refer to the diffusion tensor file
 dti_tensor = 'dti_tensor.nii';
+thresh = thresh * 1e3;
 
 clear varargin
 
 
 %% debug settings
-% thresh = 1e-3;
-% thresh = thresh .* 1e3;
 dbg_vis = 0;
 dbg = 1;
 if dbg; tic; end
@@ -51,33 +46,39 @@ if dbg; tic; end
 
 %% ________________________________________________________________________
 %% BOUNDING CYLINDER
-ea_dispt('Building the bounding cylinder...')
-
-if max(S.amplitude{side})>4
-    cylinder.stretchfactor=0.75*(max(S.amplitude{side})/2.5);
+fprintf('\nVAT ESTIMATION ON SIDE %i \n', side)
+if (exist([options.root, options.patientname, filesep, 'stimulations', filesep, 'cylinder_mesh_', num2str(side), '.mat'], 'file') == 2)   && not(dbg)
+    load([options.root, options.patientname, filesep, 'stimulations', filesep, 'cylinder_mesh_', num2str(side), '.mat'], 'cylinder', 'vol')
 else
-    cylinder.stretchfactor=0.5;
+    ea_dispt('Building the bounding cylinder...')
+
+    % if max(S.amplitude{side})>4
+    %     cylinder.stretchfactor=0.75*(max(S.amplitude{side})/2.5);
+    % else
+        cylinder.stretchfactor=0.5;
+    % end
+
+    % define a bounding cylinder to which restrict the mesh
+    cylinder.upper_bound = 15+(20*cylinder.stretchfactor);
+    cylinder.lower_bound = -20*cylinder.stretchfactor;
+    cylinder.vol_top = [0, 0, cylinder.upper_bound];
+    cylinder.vol_bottom = [0, 0, cylinder.lower_bound];
+    cylinder.cyltrisize = 0.5;                 % maximum triangle size of the bounding cyl
+    cylinder.cyltetvol = 0.1;                  % maximum tetrahedral volume in the mesh --> CRITICAL PARAMETER FOR THE RESOLUTION OF THE FIELD
+    cylinder.cylradius = 40*cylinder.stretchfactor;   % define the radius of the bounding cylinder
+    cylinder.ndiv=50;                        % division of circle for the bounding cylinder
+
+    % cylinder.cyltrisize = 1;                 % maximum triangle size of the bounding cyl
+    % cylinder.cyltetvol = 1;                  % maximum tetrahedral volume in the mesh --> CRITICAL PARAMETER FOR THE RESOLUTION OF THE FIELD
+
+    % define and transform the cylinder, directly obtaining the mesh
+    [vol.pos,vol.face,vol.tet]= meshacylinder(cylinder.vol_bottom, cylinder.vol_top, cylinder.cylradius, cylinder.cyltrisize, cylinder.cyltetvol, cylinder.ndiv);
+    
+    vol.tet = vol.tet(:,1:4);  % eliminate last column, that is the one used for homogeneous representation
+    vol.ctr = tetctr(vol.pos, vol.tet);
+
+    save([options.root, options.patientname, filesep, 'stimulations', filesep, 'cylinder_mesh_', num2str(side), '.mat'], 'cylinder', 'vol')
 end
-
-% define a bounding cylinder to which restrict the mesh
-cylinder.upper_bound = 15+(20*cylinder.stretchfactor);
-cylinder.lower_bound = -20*cylinder.stretchfactor;
-cylinder.vol_top = [0, 0, cylinder.upper_bound];
-cylinder.vol_bottom = [0, 0, cylinder.lower_bound];
-cylinder.cyltrisize = 0.5;                 % maximum triangle size of the bounding cyl
-cylinder.cyltetvol = 0.1;                  % maximum tetrahedral volume in the mesh --> CRITICAL PARAMETER FOR THE RESOLUTION OF THE FIELD
-cylinder.cylradius = 40*cylinder.stretchfactor;   % define the radius of the bounding cylinder
-cylinder.ndiv=50;                        % division of circle for the bounding cylinder
-
-% cylinder.cyltrisize = 1;                 % maximum triangle size of the bounding cyl
-% cylinder.cyltetvol = 1;                  % maximum tetrahedral volume in the mesh --> CRITICAL PARAMETER FOR THE RESOLUTION OF THE FIELD
-
-% define and transform the cylinder, directly obtaining the mesh
-[vol.pos,vol.face,vol.tet]= meshacylinder(cylinder.vol_bottom, cylinder.vol_top, cylinder.cylradius, cylinder.cyltrisize, cylinder.cyltetvol, cylinder.ndiv);
-% vol.pos = vol.pos / 1e3;  % convert from mm to m
-vol.tet = vol.tet(:,1:4);  % eliminate last column, that is the one used for homogeneous representation
-vol.ctr = tetctr(vol.pos, vol.tet);
-
 
 %% ________________________________________________________________________
 %% ELECTRODES MODEL
@@ -103,9 +104,6 @@ elspec=getappdata(resultfig,'elspec');
 coords=coords{side};
 setappdata(resultfig,'elstruct',elstruct);
 
-% coords_m{1, 1} = coords_mm{1, 1} / 1e3;  % from mm to m
-% coords_m{1, 2} = coords_mm{1, 2} / 1e3;
-
 % Add stretchfactor to elstruct simply for purpose of checking if headmodel
 % changed. Larger stim amplitudes need larger bounding boxes so
 % stretchfactor must be incorporated here.
@@ -124,6 +122,14 @@ end
 % insulation or contact)
 elmodel_path=[ea_getearoot,'templates',filesep,'electrode_models',filesep,elspec.matfname,'_vol.mat'];
 elmodel = load(elmodel_path);
+
+% refine the cylinder volume in the area of the electrode
+keepratio = 0.5;  % this is the percentage of faces that will be kept in resampling
+[elmodel.node, elmodel.face] = meshresample(elmodel.node, elmodel.face(:,1:3), keepratio);
+[vol.pos, vol.face] = surfboolean(vol.pos, vol.face, 'resolve', elmodel.node, elmodel.face);
+[vol.pos, vol.face] = meshcheckrepair(vol.pos, vol.face, 'dup');
+[vol.pos, vol.face] = meshcheckrepair(vol.pos, vol.face, 'meshfix');
+[vol.pos, vol.tet, vol.face] = s2m(vol.pos, vol.face(:,1:3), [0,0,0], [0,0,max(vol.pos(:,3))], 0.6, 0.1);
 
 if dbg_vis
     % old_elmodel = elmodel;
@@ -186,6 +192,7 @@ vol.pos = T*[vol.pos, ones(length(vol.pos), 1)]';
 vol.pos = vol.pos(1:3,:)';
 vol.ctr = T*[vol.ctr, ones(length(vol.ctr), 1)]';
 vol.ctr = vol.ctr(1:3,:)';
+vol.unit = 'mm';
 
 if dbg_vis
     figure
@@ -201,14 +208,14 @@ end
 %% HEADMODEL
 ea_dispt('Starting FEM headmodel generation...')
 
-if (exist([options.root, options.patientname, filesep, 'stimulations', filesep, 'conductivity_tensor_', num2str(side), '.mat'], 'file') == 2) 
+if (exist([options.root, options.patientname, filesep, 'stimulations', filesep, 'conductivity_tensor_', num2str(side), '.mat'], 'file') == 2)  % && not(dbg)
     load([options.root, options.patientname, filesep, 'stimulations', filesep, 'conductivity_tensor_', num2str(side), '.mat'], 'cond')
 else
     %% initialize (with cartoon data in debug mode)
     anat = dir([options.root, options.patientname, filesep, options.prefs.prenii_searchstring]);
     anat = [options.root,options.patientname,filesep,anat(1).name];  % anat is the path to the file called anat_t1.nii in the patient folder
 
-    % check if the file dti_tensor is presentin patient folder
+    % check if the file dti_tensor is present in patient folder
     if not(exist([options.root,options.patientname,filesep,dti_tensor], 'file') == 2)
         error("File %s not found in the patient folder, make sure you have named it properly", dti_tensor)
     end
@@ -226,7 +233,7 @@ else
     %% build the grid of points corresponding to the voxels of the volume
     % check if the dti has the same dimensions of the anatomical image
     if not(isequal(size(dti, 1:3), mri.dim))
-        error("The diffusion tensor dti_tensor.nii needs to have the same dimensions of the anatomical image used as anchor image")
+        error("The diffusion tensor dti_tensor.nii needs to have the same dimensions of the anatomical image used as anchor image. Perform image warping")
     end
 
     % build grid from volume 
@@ -271,9 +278,9 @@ else
 
     if dbg
         isotropic_conductivity_stn = teststn(vol, cond, side, options);
-        fprintf("\nDEBUG ___________________________________________________\n")
-        fprintf("The average isotropic conductivity in the STN is %f \n", isotropic_conductivity_stn)
-        fprintf("_________________________________________________________\n\n\n")
+        fprintf("\nDEBUG ________________________________________________________\n")
+        fprintf("The average isotropic conductivity in the STN is %f S/mm\n", isotropic_conductivity_stn)
+        fprintf("______________________________________________________________\n\n\n")
     end
 
     save([options.root, options.patientname, filesep, 'stimulations', filesep, 'conductivity_tensor_', num2str(side), '.mat'], 'cond')
@@ -286,10 +293,12 @@ end
 % contact conductivity of 10^8 S/m to all the voxels near to the centroid
 % of a contact element. Values are taken from 
 % cond_contacts = 1e8;  % Salvador et al 2012 states this should be 2 S/m, but in that case it is transcranial stimulation
-cond_contacts = 1e5;  % in S/mm
+% cond_contacts = 1e5;  % in S/mm
+cond_contacts = 1e13;  % in S/mm
 % cond_insulation = 1e-16;
-cond_insulation = 1e-19;  % in S/mm
-cond_encapsulation = 0.07 * 1e-3;  % found in "isotropic conductivities", but according to Gunalan et al 2017 it can be 0.05±0.2 S/m
+% cond_insulation = 1e-19;  % in S/mm
+cond_insulation = 1e-11;  % in S/mm
+cond_encapsulation = 0.05 * 1e-3;  % found in "isotropic conductivities", but according to Gunalan et al 2017 it can be 0.05±0.2 S/m
 
 % el_cond = unique(knnsearch(vol.ctr, elmodel.ctr));
 el_cond = unique(knnsearch(vol.ctr, elmodel.node));  % index of all the elements in cylinder corresponding to electrode contacts
@@ -302,6 +311,15 @@ cond(encaps_index,:) = cond_encapsulation;  %#ok<FNDSB>
 con_cond = unique(knnsearch(vol.pos, contacts_vertices));  % #####
 % con_cond(vol.r(con_cond,:)>elrad) = [];
 cond(con_cond,:) = cond_contacts;  % contact conductivity (isotropic)
+
+% #####
+% convert from mm to m
+cond = cond * 1e3;
+vol.pos = vol.pos * 1e-3;
+vol.ctr = vol.ctr * 1e-3;
+vol.r = vol.r * 1e-3;
+vol.unit = 'm';
+% #####
 
 if dbg_vis
     figure; 
@@ -329,7 +347,7 @@ catch
     vol.stiff = simbio_stiff_matrix(cond, vol);
 %     vol.stiff = sb_calc_stiff(cond, vol);
 end
-vol.type = 'simbio';
+vol.method = 'simbio';
 % vol.stiff = abs(vol.stiff);
 
 % check if the stiffness matrix has all the elements in the diagonal
@@ -353,7 +371,7 @@ try
 catch
     for i=1:length(negative_diag_stiff)                 % I had to arrange the check this way, 
         j = negative_diag_stiff(i);                     % otherwise MATLAB gives problems of 
-        vol.stiff(j,j) = abs(vol.stiff(j,j));           % memory outage with 8GB RAM
+        vol.stiff(j,j) = abs(vol.stiff(j,j));           % memory outage (8GB RAM)
     end
 end
 
@@ -411,7 +429,8 @@ for source = S.sources  % ##### TODO: check if this block allows for multipolar 
             %% organize information to feed into the ea_apply_dbs function for potential computation
             
             % find the nodes of the active contact in scope
-            active_contacts = electrode.contacts(con).vertices;
+            active_contacts = electrode.contacts(con).vertices / 1e3;  % in m
+%             active_contacts = electrode.contacts(con).vertices;  % in mm
 
             % find elements in mesh corresponding to nodes of the active
             % contact in scope
@@ -443,7 +462,9 @@ for source = S.sources  % ##### TODO: check if this block allows for multipolar 
                 unipolar=1;
             end
             
-            active_coords = [active_coords; coords(boolean(U), :)];  % find coordinates where the contacts are active
+%           ##### In the line below I substituted boolean(U) with logical(U) #####
+            active_coords = [active_coords; coords(logical(U), :)  / 1e3];  % find coordinates where the contacts are active in m
+%             active_coords = [active_coords; coords(logical(U), :)];  % find coordinates where the contacts are active in mm
             
             ix = [ix;activeidx(source).con(con).ix]; %#ok<*AGROW>  % belonging of an active element to a contact
             voltix_new = [repmat(U(con), length(activeidx(source).con(con).ix), 1), ...
@@ -472,17 +493,17 @@ for source = S.sources  % ##### TODO: check if this block allows for multipolar 
         potential = ea_apply_dbs(vol,ix,voltix,unipolar,constvol,vol.boundary); % output in V. 4 indexes insulating material.
         gradient{source} = ea_calc_gradient(vol,potential);
 
-
-        %% get high EF values for active electrodes
-        % this can be adjusted by assigning all the tetrahedra belonging to the
-        % active electrode a new value: gradient{source}(elec_tet_ix,:) = new_value;
-        elec_tet_ix = sub2ind(size(vol.pos), vertcat(ix,ix,ix), vertcat(ones(length(ix),1), ones(length(ix),1).*2, ones(length(ix),1).*3));
-        elec_tet_ix = find(sum(ismember(vol.tet,elec_tet_ix),2)==4);
-
-        % gradient{source}(elec_tet_ix,:) = repmat(max(gradient{source}),[length(elec_tet_ix),1]); %assign maximum efield value
-        tmp = sort(abs(gradient{source}),'descend');
-        gradient{source}(elec_tet_ix,:) = repmat(mean(tmp(1:ceil(length(tmp(:,1))*0.001),:)),[length(elec_tet_ix),1]); % choose mean of highest 0.1% as new efield value
-        clear tmp
+% % ##### block below was commented #####
+%         %% get high EF values for active electrodes
+%         % this can be adjusted by assigning all the tetrahedra belonging to the
+%         % active electrode a new value: gradient{source}(elec_tet_ix,:) = new_value;
+%         elec_tet_ix = sub2ind(size(vol.pos), vertcat(ix,ix,ix), vertcat(ones(length(ix),1), ones(length(ix),1).*2, ones(length(ix),1).*3));
+%         elec_tet_ix = find(sum(ismember(vol.tet,elec_tet_ix),2)==4);
+% 
+%         % gradient{source}(elec_tet_ix,:) = repmat(max(gradient{source}),[length(elec_tet_ix),1]); %assign maximum efield value
+%         tmp = sort(abs(gradient{source}),'descend');
+%         gradient{source}(elec_tet_ix,:) = repmat(mean(tmp(1:ceil(length(tmp(:,1))*0.001),:)),[length(elec_tet_ix),1]); % choose mean of highest 0.1% as new efield value
+%         clear tmp
 
 
     else
@@ -498,21 +519,25 @@ gradient=gradient{1}+gradient{2}+gradient{3}+gradient{4};
 % convert back to mm
 % vol.pos=vol.pos*1000; 
 
-vatgrad=getappdata(resultfig,'vatgrad');
-if isempty(vatgrad)
-    clear('vatgrad');
-end
-
 
 %% ________________________________________________________________________
 %% FLOWFIELD VISUALIZATION
 ea_dispt('Calculating quiver field of gradient for display purposes...');
-midpts = vol.ctr;
+midpts = vol.ctr * 1e3;  % convert back to mm
 
 if dbg_vis
     figure
     quiver3(midpts(:,1),midpts(:,2),midpts(:,3),gradient(:,1),gradient(:,2),gradient(:,3))
     title('quiver field')
+end
+
+
+% % ##### block below added #####
+%% remove electrode
+if options.prefs.machine.vatsettings.aniso_removeElectrode
+    el_cond = unique(knnsearch(midpts, elmodel.node));
+    midpts(el_cond,:) = [];
+    gradient(el_cond,:) = [];
 end
 
 
@@ -549,227 +574,10 @@ if dbg_vis && exist('c', 'var')
 end
 
 
-%% compute normalized gradient
-% define midpoints of quiver field
-vatgrad(side).x=midpts(indices,1); 
-vatgrad(side).y=midpts(indices,2); 
-vatgrad(side).z=midpts(indices,3);
-
-gradvis=gradient(indices,:);  % subsample gradient
-mag_gradvis=sqrt(sum(gradvis'.^2,1))';  % obtain magnitude of the gradient (remember that here you are loosing one dimension, with a length of 3)
-nmag_gradvis=mag_gradvis;  % copy to get normalized version
-nmag_gradvis(nmag_gradvis>thresh)=thresh;
-
-nmag_gradvis=(nmag_gradvis-min(nmag_gradvis(:)))/max(nmag_gradvis-min(nmag_gradvis(:)));  % norm from 1 - 0
-nmag_gradvis=nmag_gradvis/5; % largest grad vector will be 1/50 mm long
-
-% apply scaling to gradvis
-gradvis=gradvis.*repmat(nmag_gradvis,1,3);  % make 3 copies in a column of the nmag_gradvis array in order to make sizes match (in the end the size is 3xN)
-gradvis=gradvis./repmat(mag_gradvis,1,3);
-
-vatgrad(side).qx=gradvis(:,1); 
-vatgrad(side).qy=gradvis(:,2); 
-vatgrad(side).qz=gradvis(:,3);
-
-% share normalized gradient with the workflow
-setappdata(resultfig,'vatgrad',vatgrad);
-
-clear indices
-
-
-%% prepare vat structure
-% calculate electric field ET by calculating midpoints of each
-% mesh-connection and setting difference of voltage to these points.
-vat.pos=midpts;
-vat.ET = sqrt(sum(gradient'.^2,1)); % vol.cond.*sqrt(sum(gradient'.^2,1)); would be stromstaerke (=> magnitude).
-
-% remove electrode nodes from VAT
-where_electrode = unique(vol.tet(el_cond,:));
-vat.pos(where_electrode,:) = [];
-vat.ET(where_electrode) = [];
-
-ea_dispt('Preparing VAT...');
-vat.tET=vat.ET>thresh;
-vat.tpos=vat.pos(vat.tET,:);
-outliers=ea_removeoutliers(vat.tpos,mean(active_coords,1),voltix,constvol);
-vat.tpos(outliers,:)=[];
-
-if dbg_vis
-    figure, plot3(vat.tpos(:,1),vat.tpos(:,2),vat.tpos(:,3),'r.');
-    [~,trajectory,~,~,~,~]=ea_load_reconstruction(options);
-    hold on
-    plot3(trajectory{side}(:,1),trajectory{side}(:,2),trajectory{side}(:,3),'k*');
-%     plot3(nvat.tpos(:,1),nvat.tpos(:,2),nvat.tpos(:,3),'m.');
-    toptions=options; toptions.native=1;
-    [~,trajectory,~,~,~,~]=ea_load_reconstruction(toptions);
-    plot3(trajectory{side}(:,1),trajectory{side}(:,2),trajectory{side}(:,3),'g*');
-
-end
-
-% the following will be used for volume-to-isosurf creation as well as
-% volumetrics of the vat in mm^11
-ea_dispt('Calculating interpolant on scattered FEM mesh data...');
-F=scatteredInterpolant(vat.pos(:,1),vat.pos(:,2),vat.pos(:,3),vat.ET','linear','none');
-% F = scatteredInterpolant(x, y, z, v, 'linear', 'extrapolation_method') 
-% creates an interpolant that fits a surface of the form v = F(x, y, z)
-% using a 'linear' (or alternative method) interpolation and the specified
-% extrapolation method for query points outside the convex hull
-
-
-%% convert to equispaced image
-ea_dispt('Converting to equispaced image data...');
-res=100;
-gv=cell(3,1); spacing=zeros(3,1);
-try
-    for dim=1:3  
-        % in each dimension create an array of res=100 equispaced points 
-        % from the minimum position of the activated area to the maximum one
-        gv{dim}=linspace(min(round(vat.tpos(:,dim)))-5,max(round(vat.tpos(:,dim)))+5,res);
-        spacing(dim)=abs(gv{dim}(1)-gv{dim}(2));
-    end
-catch  % if linspace fails it means the vat is empty or that it has problems -> no vat is returned
-    varargout{1}=nan;
-    varargout{2}=nan;
-    varargout{3}=nan;
-    return
-end
-
-
 %% ________________________________________________________________________
-%%  NIfTI AND DATA EXPORT
-ea_dispt('Creating nifti header for export...');
-
-chun1=randperm(res); chun2=randperm(res); chun3=randperm(res);
-Vvat.mat=mldivide([(chun1);(chun2);(chun3);ones(1,res)]',[gv{1}(chun1);gv{2}(chun2);gv{3}(chun3);ones(1,res)]')';
-Vvat.dim=[res,res,res];
-Vvat.dt=[4,0];
-Vvat.n=[1 1];
-Vvat.descrip='lead dbs - vat';
-if ~exist([options.root,options.patientname,filesep,'stimulations',filesep,ea_nt(options)],'file')
-    mkdir([options.root,options.patientname,filesep,'stimulations',filesep,ea_nt(options)]);
-end
-
-ea_dispt('Filling data with values from interpolant...');
-eeg = F(gv);
-eeg(isnan(eeg))=0;
-eeg(eeg>options.prefs.vat.efieldmax)=options.prefs.vat.efieldmax; % upperlimit files to 10000.
-
-if dbg_vis  % TODO: check this block, since at the moment F is exactly superimposed to vat.pos (interpolant did nothing)
-    figure
-    plot3(F.Points(:,1),F.Points(:,2),F.Points(:,3),'r.')
-    hold on
-    plot3(vat.pos(:,1),vat.pos(:,2),vat.pos(:,3),'b.')
-    title('E-Field')
-end
-
-ea_dispt('Calculating output file data...');
-eg=eeg;
-eg=eg>thresh;
-% binary e-field - "vat"
-
-neeg=eeg;
-neeg(~eg)=nan;
-
-neeg(neeg>0)=ea_normal(neeg(neeg>0),1,0,' ',0,1,'TRUE');%
-% normalized e-field (zscored).
-neeg(~isnan(neeg))=neeg(~isnan(neeg))-min(neeg(~isnan(neeg)));
-neeg(~isnan(neeg))=neeg(~isnan(neeg))/sum(neeg(~isnan(neeg))); % 0-1 distributed.
-
-[xg,yg,zg] = meshgrid(gv{1},gv{2},gv{3});
-
-XYZmax=[max(yg(eg>0)),max(xg(eg>0)),max(zg(eg>0))]; % x and y need to be permuted here (should be correct but wouldn't matter anyways since only serves to calc radius)
-try
-    radius=ea_pdist([XYZmax;active_coords]);
-catch
-    radius=0;
-    keyboard
-end
-
-
-%% compute VAT volume
-%eg=smooth3(eg,'gaussian',[25 25 25]);
-ea_dispt('Calculating volume...');
-
-vatvolume=sum(eg(:))*spacing(1)*spacing(2)*spacing(3); % returns volume of vat in mm^3
-S.volume(side)=vatvolume;
-
-
-%% export files and variables
-ea_dispt('Writing files...');
-
-% determine stimulation name:
-if ~exist([options.root,options.patientname,filesep,'stimulations',filesep,ea_nt(options),stimname],'file')
-    mkdir([options.root,options.patientname,filesep,'stimulations',filesep,ea_nt(options),stimname]);
-end
-
-switch side
-    case 1
-        Vvat.fname=[options.root,options.patientname,filesep,'stimulations',filesep,ea_nt(options),stimname,filesep,'vat_right.nii'];
-        Vvate=Vvat; Vvatne=Vvat;
-        Vvate.fname=[options.root,options.patientname,filesep,'stimulations',filesep,ea_nt(options),stimname,filesep,'vat_efield_right.nii'];
-        Vvatne.fname=[options.root,options.patientname,filesep,'stimulations',filesep,ea_nt(options),stimname,filesep,'vat_efield_gauss_right.nii'];
-    case 2
-        Vvat.fname=[options.root,options.patientname,filesep,'stimulations',filesep,ea_nt(options),stimname,filesep,'vat_left.nii'];
-        Vvate=Vvat; Vvatne=Vvat;
-        Vvate.fname=[options.root,options.patientname,filesep,'stimulations',filesep,ea_nt(options),stimname,filesep,'vat_efield_left.nii'];
-        Vvatne.fname=[options.root,options.patientname,filesep,'stimulations',filesep,ea_nt(options),stimname,filesep,'vat_efield_gauss_left.nii'];
-end
-%save(stimfile,'S');
-ea_savestimulation(S,options);
-% setappdata(lgfigure,'curS',S);
-
-%spm_write_vol(Vvat,flipdim(eg,3));
-
-Vvate.img=eeg; %permute(eeg,[2,1,3]);
-Vvate.dt=[16,0];
-ea_write_nii(Vvate);
-
-Vvatne.img=neeg; %permute(neeg,[2,1,3]);
-ea_write_nii(Vvatne);
-
-Vvat.img=eg; %permute(eg,[1,2,3]);
-ea_write_nii(Vvat);
-
-ea_dispt('Calculating isosurface to display...');
-vatfv=isosurface(xg,yg,zg,permute(Vvat.img,[2,1,3]),0.75);
-
-caps=isocaps(xg,yg,zg,permute(Vvat.img,[2,1,3]),0.5);
-
-vatfv.faces=[vatfv.faces;caps.faces+size(vatfv.vertices,1)];
-vatfv.vertices=[vatfv.vertices;caps.vertices];
-
-
-try
-    vatfv=ea_smoothpatch(vatfv,1,35);
-catch
-    try
-        cd([ea_getearoot,'ext_libs',filesep,'smoothpatch']);
-        mex ea_smoothpatch_curvature_double.c -v
-        mex ea_smoothpatch_inversedistance_double.c -v
-        mex ea_vertex_neighbours_double.c -v
-        vatfv=ea_smoothpatch(vatfv);
-    catch
-        warndlg('Patch could not be smoothed. Please supply a compatible Matlab compiler to smooth VTAs.');
-    end
-end
-
-% new save by Till to save VAT and quiver in seperate .mat-file for quick
-% visualization
-switch side
-    case 1
-        vatfvname=[options.root,options.patientname,filesep,'stimulations',filesep,ea_nt(options),stimname,filesep,'vat_right.mat'];
-    case 2
-        vatfvname=[options.root,options.patientname,filesep,'stimulations',filesep,ea_nt(options),stimname,filesep,'vat_left.mat'];
-end
-vatgrad = vatgrad(side);
-save(vatfvname,'vatfv','vatgrad','vatvolume');
-
-% vta.nii save, filled and eroded/dilated by 3 voxels.
-Vvat.img=imfill(Vvat.img,'holes');
-SE = strel('sphere',3);
-Vvat.img = imerode(Vvat.img,SE);
-Vvat.img = imdilate(Vvat.img,SE);
-ea_write_nii(Vvat);
+%% SAVE FUNCTION OUTPUTS
+% no output to the user, since the following function is by itself very verbose
+[vatfv,vatvolume,radius] = ea_write_vta_nii(S,stimname,midpts,indices,elspec,active_coords,voltix,constvol,thresh,vol,gradient,side,resultfig,options);
 
 
 %% ________________________________________________________________________
@@ -781,7 +589,11 @@ ea_dispt(''); % stop chain of timed processes.
 
 
 %% 
-if dbg; toc; end
+if dbg
+    fprintf("\nDEBUG ___________________________________________________\n")
+    toc;
+    fprintf("_________________________________________________________\n\n")
+end
 
 
 end  % function
