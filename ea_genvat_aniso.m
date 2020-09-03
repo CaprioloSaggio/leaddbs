@@ -43,13 +43,19 @@ dbg_vis = 0;
 dbg = 1;
 if dbg; tic; end
 
-
-%% ________________________________________________________________________
-%% BOUNDING CYLINDER
 fprintf('\nVAT ESTIMATION ON SIDE %i \n', side)
-if (exist([options.root, options.patientname, filesep, 'stimulations', filesep, 'cylinder_mesh_', num2str(side), '.mat'], 'file') == 2)   && not(dbg)
-    load([options.root, options.patientname, filesep, 'stimulations', filesep, 'cylinder_mesh_', num2str(side), '.mat'], 'cylinder', 'vol')
+
+% if it already exists, load the mesh
+if (exist([options.root, options.patientname, filesep, 'stimulations', filesep, 'mesh_', num2str(side), '.mat'], 'file') == 2)   && not(dbg)
+    if dbg
+        load([options.root, options.patientname, filesep, 'stimulations', filesep, 'mesh_', num2str(side), '.mat'], 'cylinder', 'vol', 'T', 'electrode', 'elmodel', 'contacts_vertices','encaps_index')
+    else
+        load([options.root, options.patientname, filesep, 'stimulations', filesep, 'mesh_', num2str(side), '.mat'], 'vol', 'T', 'electrode', 'elmodel', 'contacts_vertices','encaps_index')
+    end
+% ortherwise compute it 
 else
+    %% ________________________________________________________________________
+    %% BOUNDING CYLINDER
     ea_dispt('Building the bounding cylinder...')
 
     % if max(S.amplitude{side})>4
@@ -63,8 +69,8 @@ else
     cylinder.lower_bound = -20*cylinder.stretchfactor;
     cylinder.vol_top = [0, 0, cylinder.upper_bound];
     cylinder.vol_bottom = [0, 0, cylinder.lower_bound];
-    cylinder.cyltrisize = 0.5;                 % maximum triangle size of the bounding cyl
-    cylinder.cyltetvol = 0.1;                  % maximum tetrahedral volume in the mesh --> CRITICAL PARAMETER FOR THE RESOLUTION OF THE FIELD
+    cylinder.cyltrisize = 1;                 % maximum triangle size of the bounding cyl
+    cylinder.cyltetvol = 1;                  % maximum tetrahedral volume in the mesh --> CRITICAL PARAMETER FOR THE RESOLUTION OF THE FIELD
     cylinder.cylradius = 40*cylinder.stretchfactor;   % define the radius of the bounding cylinder
     cylinder.ndiv=50;                        % division of circle for the bounding cylinder
 
@@ -75,79 +81,101 @@ else
     [vol.pos,vol.face,vol.tet]= meshacylinder(cylinder.vol_bottom, cylinder.vol_top, cylinder.cylradius, cylinder.cyltrisize, cylinder.cyltetvol, cylinder.ndiv);
     
     vol.tet = vol.tet(:,1:4);  % eliminate last column, that is the one used for homogeneous representation
-    vol.ctr = tetctr(vol.pos, vol.tet);
+    
 
-    save([options.root, options.patientname, filesep, 'stimulations', filesep, 'cylinder_mesh_', num2str(side), '.mat'], 'cylinder', 'vol')
-end
-
-%% ________________________________________________________________________
-%% ELECTRODES MODEL
-ea_dispt('Building electrode model...')
+    %% ________________________________________________________________________
+    %% ELECTRODES MODEL
+    ea_dispt('Building electrode model...')
 
 
-%% get the electrode model and the relative patient-specific transformation
-% Important to load in reco from a new since we need to decide whether to
-% use native or template coordinates. Even when running in template space,
-% the native coordinates are sometimes used (VTA is then calculated in 
-% native space and ported to template).
+    %% get the electrode model and the relative patient-specific transformation
+    % Important to load in reco from a new since we need to decide whether to
+    % use native or template coordinates. Even when running in template space,
+    % the native coordinates are sometimes used (VTA is then calculated in 
+    % native space and ported to template).
 
-resultfig=getappdata(lgfigure,'resultfig');
-options.loadrecoforviz=1;
-[coords_mm,trajectory,markers]=ea_load_reconstruction(options);
-elstruct(1).coords_mm=coords_mm;
-elstruct(1).coords_mm=ea_resolvecoords(markers,options);
-elstruct(1).trajectory=trajectory;
-elstruct(1).name=options.patientname;
-elstruct(1).markers=markers;
+    resultfig=getappdata(lgfigure,'resultfig');
+    options.loadrecoforviz=1;
+    [coords_mm,trajectory,markers]=ea_load_reconstruction(options);
+    elstruct(1).coords_mm=coords_mm;
+    elstruct(1).coords_mm=ea_resolvecoords(markers,options);
+    elstruct(1).trajectory=trajectory;
+    elstruct(1).name=options.patientname;
+    elstruct(1).markers=markers;
 
-elspec=getappdata(resultfig,'elspec');
-coords=coords{side};
-setappdata(resultfig,'elstruct',elstruct);
+    elspec=getappdata(resultfig,'elspec');
+    coords=coords{side};
+    setappdata(resultfig,'elstruct',elstruct);
 
-% Add stretchfactor to elstruct simply for purpose of checking if headmodel
-% changed. Larger stim amplitudes need larger bounding boxes so
-% stretchfactor must be incorporated here.
-if max(S.amplitude{side})>4
-    elstruct.stretchfactor=0.75; %(max(S.amplitude{side})/10);
-else
-    elstruct.stretchfactor=0.5;
-end
+    % Add stretchfactor to elstruct simply for purpose of checking if headmodel
+    % changed. Larger stim amplitudes need larger bounding boxes so
+    % stretchfactor must be incorporated here.
+    if max(S.amplitude{side})>4
+        elstruct.stretchfactor=0.75; %(max(S.amplitude{side})/10);
+    else
+        elstruct.stretchfactor=0.5;
+    end
 
-% compute transformation from general to patient specific electrode model
-% (surface, containing info on insulation or contact)
-[~,~,T,electrode]=ea_buildelfv(elspec,elstruct,side);  % T is the transformation between model space and patient space
-% [elfv,~,T,electrode]=ea_buildelfv(elspec,elstruct,side);
+    % load and transform volumetric mesh of the electrode (w/o information about 
+    % insulation or contact)
+    elmodel_path=[ea_getearoot,'templates',filesep,'electrode_models',filesep,elspec.matfname,'_vol.mat'];
+    elmodel = load(elmodel_path);
+    
+%     %{
+      % refine the cylinder volume in the area of the electrode
+      keepratio = 1;  % this is the percentage of faces that will be kept in resampling
+    
+      [elmodel.node, elmodel.face] = meshresample(elmodel.node, elmodel.face(:,1:3), keepratio);
+%     ISO2MESH_SURFBOOLEAN = 'gtsset';  % ##### this gives a problem!
+%     [vol.pos, vol.face] = surfboolean(vol.pos, vol.face(:,1:3), 'resolve', elmodel.node, elmodel.face);
+%     [tempvol.pos, tempvol.face] = surfboolean(vol.pos, vol.face(:,1:3), 'all', elmodel.node, elmodel.face);
+%     tempvol.face = tempvol.face(find(mod(tempvol.face(:,4),2)==0),:); %#ok<FNDSB>
+%     tempvol.pos(tempvol.face(find(mod(tempvol.face(:,4),2)==1),:)) = []; %#ok<FNDSB>
+%     [vol.pos, vol.face] = surfboolean(tempvol.pos, tempvol.face(:,1:3), 'resolve', elmodel.node, elmodel.face);
+    
+    ISO2MESH_SURFBOOLEAN='cork';
+    for attempt=1:4
+        try 
+            [vol.pos, vol.face] = surfboolean(vol.pos, vol.face(:,1:3), 'resolve', elmodel.node, elmodel.face);
+            [vol.pos, vol.face] = meshcheckrepair(vol.pos, vol.face, 'dup');
+            [vol.pos, vol.face] = meshcheckrepair(vol.pos, vol.face, 'deep');
+            [vol.pos, vol.face] = meshcheckrepair(vol.pos, vol.face, 'dup');
+        %     [vol.pos, vol.face] = meshcheckrepair(vol.pos, vol.face, 'meshfix');
+        %     [vol.pos, vol.tet, vol.face] = surf2mesh(vol.pos, vol.face(:,1:3), cylinder.vol_bottom, cylinder.vol_top, 1, 1,[],[],1);
+            [vol.pos, vol.tet, vol.face] = s2m(vol.pos, vol.face(:,1:3), 1, 1);
+        catch
+            vol.pos = vol.pos + randn/700;
+            elmodel.node = elmodel.node + randn/700;
+        end
+        break
+    end
+    clear ISO2MESH_SURFBOOLEAN
+    vol.tet = vol.tet(:,1:4);
+    vol.ctr = meshcentroid(vol.pos, vol.tet);
+%     %}
 
-% load and transform volumetric mesh of the electrode (w/o information about 
-% insulation or contact)
-elmodel_path=[ea_getearoot,'templates',filesep,'electrode_models',filesep,elspec.matfname,'_vol.mat'];
-elmodel = load(elmodel_path);
+    % compute transformation from general to patient specific electrode model
+    % (surface, containing info on insulation or contact)
+    [~,~,T,electrode]=ea_buildelfv(elspec,elstruct,side);  % T is the transformation between model space and patient space
+    % [elfv,~,T,electrode]=ea_buildelfv(elspec,elstruct,side);
 
-% refine the cylinder volume in the area of the electrode
-keepratio = 0.5;  % this is the percentage of faces that will be kept in resampling
-[elmodel.node, elmodel.face] = meshresample(elmodel.node, elmodel.face(:,1:3), keepratio);
-[vol.pos, vol.face] = surfboolean(vol.pos, vol.face, 'resolve', elmodel.node, elmodel.face);
-[vol.pos, vol.face] = meshcheckrepair(vol.pos, vol.face, 'dup');
-[vol.pos, vol.face] = meshcheckrepair(vol.pos, vol.face, 'meshfix');
-[vol.pos, vol.tet, vol.face] = s2m(vol.pos, vol.face(:,1:3), [0,0,0], [0,0,max(vol.pos(:,3))], 0.6, 0.1);
-
-if dbg_vis
-    % old_elmodel = elmodel;
-    figure
-    plot3(elmodel.node(:,1), elmodel.node(:,2), elmodel.node(:,3), 'b.');
-end
+    if dbg_vis
+        % old_elmodel = elmodel;
+        figure
+        plot3(elmodel.node(:,1), elmodel.node(:,2), elmodel.node(:,3), 'b.');
+    end
 
 
-%% cut the electrode at the size of the bounding cylinder
-elmodel.node(elmodel.node(:,3)>cylinder.upper_bound | elmodel.node(:,3)<cylinder.lower_bound, :) = [];
+% cut the electrode at the size of the bounding cylinder
+% elmodel.node(elmodel.node(:,3)>cylinder.upper_bound | elmodel.node(:,3)<cylinder.lower_bound, :) = [];
 
 if dbg_vis
 %     elmodel.ctr = tetctr(elmodel.node, elmodel.face+1);  % find the centroids of the electrode elements
     figure
-    plot3(elmodel.node(:,1), elmodel.node(:,2), elmodel.node(:,3), 'bx');
+    plot3(elmodel.node(:,1), elmodel.node(:,2), elmodel.node(:,3), 'gx');
 %     plot3(elmodel.ctr(:,1), elmodel.ctr(:,2), elmodel.ctr(:,3), 'bx');
     hold on
-    plot3(vol.pos(:,1), vol.pos(:,2), vol.pos(:,3), 'ro')
+    plot3(vol.pos(:,1), vol.pos(:,2), vol.pos(:,3), 'b.')
 end
 
 
@@ -203,12 +231,16 @@ if dbg_vis
     plot3(elmodel.node(:,1),elmodel.node(:,2),elmodel.node(:,3),'g.');
 end
 
+    save([options.root, options.patientname, filesep, 'stimulations', filesep, 'mesh_', num2str(side), '.mat'], 'vol', 'cylinder', 'T', 'electrode', 'elmodel', 'contacts_vertices','encaps_index')
+
+end
+
 
 %% ________________________________________________________________________
 %% HEADMODEL
 ea_dispt('Starting FEM headmodel generation...')
 
-if (exist([options.root, options.patientname, filesep, 'stimulations', filesep, 'conductivity_tensor_', num2str(side), '.mat'], 'file') == 2)  % && not(dbg)
+if (exist([options.root, options.patientname, filesep, 'stimulations', filesep, 'conductivity_tensor_', num2str(side), '.mat'], 'file') == 2)   && not(dbg)
     load([options.root, options.patientname, filesep, 'stimulations', filesep, 'conductivity_tensor_', num2str(side), '.mat'], 'cond')
 else
     %% initialize (with cartoon data in debug mode)
@@ -280,11 +312,9 @@ else
         isotropic_conductivity_stn = teststn(vol, cond, side, options);
         fprintf("\nDEBUG ________________________________________________________\n")
         fprintf("The average isotropic conductivity in the STN is %f S/mm\n", isotropic_conductivity_stn)
+        fprintf("This value is only trustworthy if you are in native space\n");
         fprintf("______________________________________________________________\n\n\n")
     end
-
-    save([options.root, options.patientname, filesep, 'stimulations', filesep, 'conductivity_tensor_', num2str(side), '.mat'], 'cond')
-end
 
 
 %% find correspondence with electrodes and include them into the model
@@ -306,7 +336,7 @@ el_cond(vol.r(el_cond,:)>elrad) = [];
 cond(el_cond,:) = cond_insulation;  % insulation conductivity (isotropic)
 
 % add encapsulation layer (fibrotic tissue forming around the electrodes)
-cond(encaps_index,:) = cond_encapsulation;  %#ok<FNDSB>
+% cond(encaps_index,:) = cond_encapsulation;  %#ok<FNDSB>
 
 con_cond = unique(knnsearch(vol.pos, contacts_vertices));  % #####
 % con_cond(vol.r(con_cond,:)>elrad) = [];
@@ -323,11 +353,11 @@ vol.unit = 'm';
 
 if dbg_vis
     figure; 
-    plot3(vol.ctr(el_cond,1), vol.ctr(el_cond,2), vol.ctr(el_cond,3), 'b.')
+    plot3(vol.ctr(el_cond,1)*1e3, vol.ctr(el_cond,2)*1e3, vol.ctr(el_cond,3)*1e3, 'b.')
     hold on
-    plot3(vol.ctr(con_cond,1), vol.ctr(con_cond,2), vol.ctr(con_cond,3), 'g.')
+    plot3(vol.pos(con_cond,1)*1e3, vol.pos(con_cond,2)*1e3, vol.pos(con_cond,3)*1e3, 'g.')
 %     plot3(vol.pos(con_cond,1), vol.pos(con_cond,2), vol.pos(con_cond,3), 'g.')
-    plot3(vol.ctr(encaps_index,1), vol.ctr(encaps_index,2), vol.ctr(encaps_index,3), 'r.')
+    plot3(vol.ctr(encaps_index,1)*1e3, vol.ctr(encaps_index,2)*1e3, vol.ctr(encaps_index,3)*1e3, 'r.')
     title('non-DTI nodes')
     legend('insulation', 'contact', 'scar tissue', 'location', 'northwest')
 end
@@ -376,6 +406,9 @@ catch
 end
 
 clear negative_diag_stiff null_diag_stiff
+
+    save([options.root, options.patientname, filesep, 'stimulations', filesep, 'conductivity_tensor_', num2str(side), '.mat'], 'vol', 'cond')
+end
 
 
 %% ________________________________________________________________________

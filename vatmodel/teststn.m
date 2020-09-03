@@ -4,13 +4,13 @@ function isotropic_conductivity_stn = teststn(vol, cond, side, options)
 % around 0.33, as it is grey matter
 
 try
-    load stn
+    load([options.root, options.patientname, filesep, 'atlases', filesep, options.atlasset, filesep, 'stn.mat']);
 catch
     % find STN data
     load([options.root, options.patientname, filesep, 'atlases', filesep, options.atlasset, filesep, 'atlas_index.mat']);
     stnl = atlases.fv{1, 1}.vertices;
     stnr = atlases.fv{1, 2}.vertices;
-    save('stn.mat', 'stnl', 'stnr');
+    save([options.root, options.patientname, filesep, 'atlases', filesep, options.atlasset, filesep, 'stn.mat'], 'stnl', 'stnr');
     % load stn points
     load stn
 end
