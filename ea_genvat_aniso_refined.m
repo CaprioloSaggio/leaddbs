@@ -1,4 +1,7 @@
 function varargout = ea_genvat_aniso(varargin)
+% 
+% REFINED
+% 
 % this function is called at line 1059 of function ea_stimparams.m in the
 % following fashion:
 % [stimparams(1,side).VAT(el).VAT,volume]=feval(ea_genvat,elstruct(el).coords_mm,getappdata(handles.stimfig,'S'),side,options,stimname,options.prefs.machine.vatsettings.aniso_ethresh,handles.stimfig);
@@ -31,14 +34,18 @@ elseif nargin==1  % in this case I just return the name of the method
     end
 end
 
-% convention used to refer to the diffusion tensor file
+% conventions used
 dti_tensor = 'dti_tensor.nii';
+SI = 0;
+if SI
 thresh = thresh * 1e3;
+end
 
 clear varargin
 
 
 %% debug settings
+refine = 0;
 dbg = 1;
 dbg_vis = 0;
 dbg_load = 0;
@@ -83,6 +90,13 @@ fprintf('\nVAT ESTIMATION ON SIDE %i \n', side)
     % insulation or contact)
     elmodel_path=[ea_getearoot,'templates',filesep,'electrode_models',filesep,elspec.matfname,'_vol.mat'];
     elmodel = load(elmodel_path);
+    
+    if dbg_vis
+        % old_elmodel = elmodel;
+        figure
+        plot3(elmodel.node(:,1), elmodel.node(:,2), elmodel.node(:,3), 'b.');
+    end
+   
 
 %% ________________________________________________________________________
 %% BUILD MESH
@@ -90,9 +104,9 @@ fprintf('\nVAT ESTIMATION ON SIDE %i \n', side)
 % if it already exists, load the mesh
 if (exist([options.root, options.patientname, filesep, 'stimulations', filesep, 'mesh_', num2str(side), '.mat'], 'file') == 2) && dbg_load
     if dbg
-        load([options.root, options.patientname, filesep, 'stimulations', filesep, 'mesh_', num2str(side), '.mat'], 'cylinder', 'T', 'vol', 'electrode', 'contacts_vertices', 'coords', 'encaps_index')
+        load([options.root, options.patientname, filesep, 'stimulations', filesep, 'mesh_', num2str(side), '.mat'], 'cylinder', 'T', 'vol', 'electrode', 'contacts_vertices', 'encaps_index', 'elmodel', 'elrad')
     else
-        load([options.root, options.patientname, filesep, 'stimulations', filesep, 'mesh_', num2str(side), '.mat'], 'vol', 'T', 'electrode', 'contacts_vertices', 'coords', 'encaps_index')
+        load([options.root, options.patientname, filesep, 'stimulations', filesep, 'mesh_', num2str(side), '.mat'], 'vol', 'T', 'electrode', 'contacts_vertices', 'encaps_index', 'elmodel', 'elrad')
     end
 % ortherwise compute it 
 else
@@ -121,58 +135,67 @@ else
     
     vol.tet = vol.tet(:,1:4);  % eliminate last column, that is the one used for homogeneous representation
     
+    
+    %% ________________________________________________________________________
+    %% BOUNDARY NODES
+    % find boundary points in the volume of interest
+    vol.boundary = unique(boundary(vol.pos(:,1), vol.pos(:,2), vol.pos(:,3)));
+    if dbg_vis
+        figure 
+        plot3(vol.pos(:,1), vol.pos(:,2), vol.pos(:,3), 'b.')
+        hold on
+        plot3(vol.pos(vol.boundary, 1), vol.pos(vol.boundary, 2), vol.pos(vol.boundary, 3), 'r.')
+        title('boundary nodes')
+        legend('nodes inside the volume of interest','boundary nodes', 'location', 'northeast')
+    end
+    
 
     %% ________________________________________________________________________
     %% ELECTRODE MODEL
-    % refine the cylinder volume in the area of the electrode
-    keepratio = 1;  % this is the percentage of faces that will be kept in resampling
     
-    [elmodel.node, elmodel.face] = meshresample(elmodel.node, elmodel.face(:,1:3), keepratio);
-%     ISO2MESH_SURFBOOLEAN = 'gtsset';  % ##### this gives a problem!
-%     [vol.pos, vol.face] = surfboolean(vol.pos, vol.face(:,1:3), 'resolve', elmodel.node, elmodel.face);
-%     [tempvol.pos, tempvol.face] = surfboolean(vol.pos, vol.face(:,1:3), 'all', elmodel.node, elmodel.face);
-%     tempvol.face = tempvol.face(find(mod(tempvol.face(:,4),2)==0),:); %#ok<FNDSB>
-%     tempvol.pos(tempvol.face(find(mod(tempvol.face(:,4),2)==1),:)) = []; %#ok<FNDSB>
-%     [vol.pos, vol.face] = surfboolean(tempvol.pos, tempvol.face(:,1:3), 'resolve', elmodel.node, elmodel.face);
-    
-    ISO2MESH_SURFBOOLEAN='cork';
-    for attempt=1:4
-        try 
-            [vol.pos, vol.face] = surfboolean(vol.pos, vol.face(:,1:3), 'resolve', elmodel.node, elmodel.face);
-            [vol.pos, vol.face] = meshcheckrepair(vol.pos, vol.face, 'dup');
-            [vol.pos, vol.face] = meshcheckrepair(vol.pos, vol.face, 'deep');
-            [vol.pos, vol.face] = meshcheckrepair(vol.pos, vol.face, 'dup');
-        %     [vol.pos, vol.face] = meshcheckrepair(vol.pos, vol.face, 'meshfix');
-        %     [vol.pos, vol.tet, vol.face] = surf2mesh(vol.pos, vol.face(:,1:3), cylinder.vol_bottom, cylinder.vol_top, 1, 1,[],[],1);
-            [vol.pos, vol.tet, vol.face] = s2m(vol.pos, vol.face(:,1:3), 1, 1);
-            break
-        catch
-            fprintf("\nAttempt %i failed in generating the mesh\n");
-            vol.pos = vol.pos + randn/700;
-            elmodel.node = elmodel.node + randn/700;
+    if refine
+        % refine the cylinder volume in the area of the electrode
+        keepratio = 0.2;  % this is the percentage of faces that will be kept in resampling
+        [elmodel.node, elmodel.face] = meshresample(elmodel.node, elmodel.face(:,1:3), keepratio);
+    %     ISO2MESH_SURFBOOLEAN = 'gtsset';  % ##### this gives a problem!
+    %     [vol.pos, vol.face] = surfboolean(vol.pos, vol.face(:,1:3), 'resolve', elmodel.node, elmodel.face);
+    %     [tempvol.pos, tempvol.face] = surfboolean(vol.pos, vol.face(:,1:3), 'all', elmodel.node, elmodel.face);
+    %     tempvol.face = tempvol.face(find(mod(tempvol.face(:,4),2)==0),:); %#ok<FNDSB>
+    %     tempvol.pos(tempvol.face(find(mod(tempvol.face(:,4),2)==1),:)) = []; %#ok<FNDSB>
+    %     [vol.pos, vol.face] = surfboolean(tempvol.pos, tempvol.face(:,1:3), 'resolve', elmodel.node, elmodel.face);
+
+        ISO2MESH_SURFBOOLEAN='cork';
+        for attempt=1:4
+            try 
+                [vol.pos, vol.face] = surfboolean(vol.pos, vol.face(:,1:3), 'resolve', elmodel.node, elmodel.face);
+                [vol.pos, vol.face] = meshcheckrepair(vol.pos, vol.face, 'dup');
+                [vol.pos, vol.face] = meshcheckrepair(vol.pos, vol.face, 'deep');
+                [vol.pos, vol.face] = meshcheckrepair(vol.pos, vol.face, 'dup');
+            %     [vol.pos, vol.face] = meshcheckrepair(vol.pos, vol.face, 'meshfix');
+            %     [vol.pos, vol.tet, vol.face] = surf2mesh(vol.pos, vol.face(:,1:3), cylinder.vol_bottom, cylinder.vol_top, 1, 1,[],[],1);
+                [vol.pos, vol.tet, vol.face] = s2m(vol.pos, vol.face(:,1:3), 1, 1);
+                break
+            catch
+                fprintf("\nAttempt %i failed in generating the mesh\n", i);
+                vol.pos = vol.pos + randn/700;
+                elmodel.node = elmodel.node + randn/700;
+            end
         end
+        clear ISO2MESH_SURFBOOLEAN
+        vol.tet = vol.tet(:,1:4);
     end
-    clear ISO2MESH_SURFBOOLEAN
-    vol.tet = vol.tet(:,1:4);
+    
     vol.ctr = meshcentroid(vol.pos, vol.tet);
-%     %}
-
-
 
     % compute transformation from general to patient specific electrode model
     % (surface, containing info on insulation or contact)
     [~,~,T,electrode]=ea_buildelfv(elspec,elstruct,side);  % T is the transformation between model space and patient space
     % [elfv,~,T,electrode]=ea_buildelfv(elspec,elstruct,side);
     
-    if dbg_vis
-        % old_elmodel = elmodel;
-        figure
-        plot3(elmodel.node(:,1), elmodel.node(:,2), elmodel.node(:,3), 'b.');
+    if not(refine)
+        % cut the electrode at the size of the bounding cylinder
+        elmodel.node(elmodel.node(:,3)>cylinder.upper_bound | elmodel.node(:,3)<cylinder.lower_bound, :) = [];  % no more necessary if I add the whole electrode in the mesh as well
     end
-
-
-    % cut the electrode at the size of the bounding cylinder
-    % elmodel.node(elmodel.node(:,3)>cylinder.upper_bound | elmodel.node(:,3)<cylinder.lower_bound, :) = [];
 
     if dbg_vis
     %     elmodel.ctr = tetctr(elmodel.node, elmodel.face+1);  % find the centroids of the electrode elements
@@ -184,7 +207,8 @@ else
     end
 
 
-    %% transform the electrode model into patient space
+    %% ________________________________________________________________________
+    %% ELECTRODE MODEL (transform)
     elmodel.node = T*[elmodel.node, ones(size(elmodel.node,1),1)]';
     elmodel.node = elmodel.node(1:3,:)';
 
@@ -235,8 +259,11 @@ else
         plot3(contacts_vertices(:,1), contacts_vertices(:,2), contacts_vertices(:,3), 'ro')
         plot3(elmodel.node(:,1),elmodel.node(:,2),elmodel.node(:,3),'g.');
     end
-
-    save([options.root, options.patientname, filesep, 'stimulations', filesep, 'mesh_', num2str(side), '.mat'], 'vol', 'cylinder', 'T', 'electrode', 'contacts_vertices', 'coords', 'encaps_index')
+    
+    
+    %% ________________________________________________________________________
+    %% SAVE VOLUME AND RELATED VARIABLES    
+    save([options.root, options.patientname, filesep, 'stimulations', filesep, 'mesh_', num2str(side), '.mat'], 'vol', 'cylinder', 'T', 'electrode', 'contacts_vertices', 'encaps_index', 'elmodel', 'elrad')
 
 end
 
@@ -248,7 +275,7 @@ ea_dispt('Starting FEM headmodel generation...')
 if (exist([options.root, options.patientname, filesep, 'stimulations', filesep, 'conductivity_tensor_', num2str(side), '.mat'], 'file') == 2) && dbg_load
     load([options.root, options.patientname, filesep, 'stimulations', filesep, 'conductivity_tensor_', num2str(side), '.mat'], 'vol', 'cond')
 else
-    %% initialize (with cartoon data in debug mode)
+    %% files coordinates in system
     anat = dir([options.root, options.patientname, filesep, options.prefs.prenii_searchstring]);
     anat = [options.root,options.patientname,filesep,anat(1).name];  % anat is the path to the file called anat_t1.nii in the patient folder
 
@@ -298,20 +325,20 @@ else
 
     %% build headmodel
     % get the diffusion data and convert them to conduction data
-    r_cond = abs(dti) * 0.736;  % S*s/mm^2, McIntyre et al 2004
-    % r_cond = abs(dti - 0.124e-6) * 0.844;  % S*s/mm^2, Tuch et al 2001
+%     r_cond = abs(dti) * 0.736;  % S*s/mm^2, McIntyre et al 2004
+    r_cond = abs(dti - 0.124e-6) * 0.844;  % S*s/mm^2, Tuch et al 2001
     
     if not(dbg)
         clear dti
     end
     
     % rearrange conductivity tensor
-    cond_t = flat_dti(r_cond);
-%     cond_t = zeros([prod(size(r_cond, 1:3)), 6]);
-%     for i=1:6
-%         cond3d = r_cond(:,:,:,i);   % this passage is added for more readibility
-%         cond_t(:, i) = reshape(cond3d, [numel(cond3d), 1]);
-%     end
+%     cond_t = flat_dti(r_cond);
+    cond_t = zeros([prod(size(r_cond, 1:3)), 6]);
+    for i=1:6
+        cond3d = r_cond(:,:,:,i);   % this passage is added for more readibility
+        cond_t(:, i) = reshape(cond3d, [numel(cond3d), 1]);
+    end
     
     % select only the conductivities that match elements in the tetrahedral mesh
     cond = cond_t(cond_i, :);
@@ -328,7 +355,7 @@ else
         isotropic_conductivity_stn = teststn(vol, cond, side, options);  % it is returned in S/mm
         fprintf("\nDEBUG ________________________________________________________\n")
         fprintf("The average isotropic conductivity in the STN is %f S/m\n", isotropic_conductivity_stn*1e3)
-        fprintf("This value is only trustworthy in native space\n");
+        fprintf("This value is only reliable in native space\n");
         fprintf("______________________________________________________________\n\n\n")
     end
 
@@ -337,13 +364,9 @@ else
     % I set the conductivity of all voxels being close to the centroid of an
     % electrode element to the insulating value of 10^-16 S/m and then I apply the
     % contact conductivity of 10^8 S/m to all the voxels near to the centroid
-    % of a contact element. Values are taken from 
-    % cond_contacts = 1e8;  % Salvador et al 2012 states this should be 2 S/m, but in that case it is transcranial stimulation
-    % cond_contacts = 1e5;  % in S/mm
-    cond_contacts = 1e13;  % in S/mm
-    % cond_insulation = 1e-16;
-    % cond_insulation = 1e-19;  % in S/mm
-    cond_insulation = 1e-11;  % in S/mm
+    % of a contact element. Values are taken from Horn et al 2017   
+    cond_contacts = 1e5;  % in S/mm  % Salvador et al 2012 states this should be 2 S/m, but in that case it is transcranial stimulation
+    cond_insulation = 1e-19;  % in S/mm
     cond_encapsulation = 0.05 * 1e-3;  % found in "isotropic conductivities", but according to Gunalan et al 2017 it can be 0.05±0.2 S/m
     
     el_cond = unique(knnsearch(vol.ctr, elmodel.node));  % index of all the elements in cylinder corresponding to electrode contacts
@@ -357,22 +380,23 @@ else
     % con_cond(vol.r(con_cond,:)>elrad) = [];
     cond(con_cond,:) = cond_contacts;  % contact conductivity (isotropic)
 
-    % #####
+    if SI
     % convert from mm to m
     cond = cond * 1e3;
     vol.pos = vol.pos * 1e-3;
     vol.ctr = vol.ctr * 1e-3;
     vol.r = vol.r * 1e-3;
     vol.unit = 'm';
-    % #####
+    end
 
     if dbg_vis
+        if SI; scale = 1e3; else scale = 1; end
         figure; 
-        plot3(vol.ctr(el_cond,1)*1e3, vol.ctr(el_cond,2)*1e3, vol.ctr(el_cond,3)*1e3, 'b.')
+        plot3(vol.ctr(el_cond,1)*scale, vol.ctr(el_cond,2)*scale, vol.ctr(el_cond,3)*scale, 'b.')
         hold on
-        plot3(vol.pos(con_cond,1)*1e3, vol.pos(con_cond,2)*1e3, vol.pos(con_cond,3)*1e3, 'g.')
+        plot3(vol.pos(con_cond,1)*scale, vol.pos(con_cond,2)*scale, vol.pos(con_cond,3)*scale, 'g.')
     %     plot3(vol.pos(con_cond,1), vol.pos(con_cond,2), vol.pos(con_cond,3), 'g.')
-        plot3(vol.ctr(encaps_index,1)*1e3, vol.ctr(encaps_index,2)*1e3, vol.ctr(encaps_index,3)*1e3, 'r.')
+        plot3(vol.ctr(encaps_index,1)*scale, vol.ctr(encaps_index,2)*scale, vol.ctr(encaps_index,3)*scale, 'r.')
         title('non-DTI nodes')
         legend('insulation', 'contact', 'scar tissue', 'location', 'northwest')
     end
@@ -422,26 +446,13 @@ else
 
     clear negative_diag_stiff null_diag_stiff
 
-    save([options.root, options.patientname, filesep, 'stimulations', filesep, 'conductivity_tensor_', num2str(side), '.mat'], 'vol', 'cond', '-v7.3')
+    save([options.root, options.patientname, filesep, 'stimulations', filesep, 'conductivity_tensor_', num2str(side), '.mat'], 'vol', 'cond', '-v7.3')  % it can save files of any size
 end
 
 
 %% ________________________________________________________________________
 %% COMPUTE POTENTIAL AND ITS GRADIENT
 ea_dispt('Computing the potential based on stimulation...')
-
-
-%% find boundary points in the volume of interest
-% TODO: include this section in the function to build the cylinder mesh (it should speed up a little)
-vol.boundary = unique(boundary(vol.pos(:,1), vol.pos(:,2), vol.pos(:,3)));
-if dbg_vis
-    figure 
-    plot3(vol.pos(:,1), vol.pos(:,2), vol.pos(:,3), 'b.')
-    hold on
-    plot3(vol.pos(vol.boundary, 1), vol.pos(vol.boundary, 2), vol.pos(vol.boundary, 3), 'r.')
-    title('boundary nodes')
-    legend('nodes inside the volume of interest','boundary nodes', 'location', 'northeast')
-end
 
 
 %% define sources and contacts
@@ -478,8 +489,11 @@ for source = S.sources  % ##### TODO: check if this block allows for multipolar 
             %% organize information to feed into the ea_apply_dbs function for potential computation
             
             % find the nodes of the active contact in scope
-            active_contacts = electrode.contacts(con).vertices / 1e3;  % in m
-%             active_contacts = electrode.contacts(con).vertices;  % in mm
+            if SI
+                active_contacts = electrode.contacts(con).vertices / 1e3;  % in m
+            else
+                active_contacts = electrode.contacts(con).vertices;  % in mm
+            end
 
             % find elements in mesh corresponding to nodes of the active
             % contact in scope
@@ -568,6 +582,7 @@ clear voltix_new U activeidx elec_tet_ix ac con
 % combine gradients from all sources
 gradient=gradient{1}+gradient{2}+gradient{3}+gradient{4}; 
 
+% if SI
 % % #####
 % % convert back from m to mm
 % vol.pos = vol.pos * 1e3;
@@ -575,12 +590,15 @@ gradient=gradient{1}+gradient{2}+gradient{3}+gradient{4};
 % vol.r = vol.r * 1e3;
 % vol.unit = 'mm';
 % % #####
+% end
 
 
 %% ________________________________________________________________________
 %% FLOWFIELD VISUALIZATION
 ea_dispt('Calculating quiver field of gradient for display purposes...');
-midpts = vol.ctr * 1e3;  % convert back to mm
+midpts = vol.ctr;
+
+if SI; midpts = midpts * 1e3; end  % convert back to mm
 
 if dbg_vis
     figure

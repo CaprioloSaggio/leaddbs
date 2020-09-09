@@ -46,7 +46,7 @@ clear varargin
 
 
 %% debug settings
-refine = 0;
+refine = 1;
 dbg_vis = 0;
 dbg_load = 0;
 dbg = 1;
@@ -129,17 +129,13 @@ else
     cylinder.lower_bound = -20*cylinder.stretchfactor;
     cylinder.vol_top = [0, 0, cylinder.upper_bound];
     cylinder.vol_bottom = [0, 0, cylinder.lower_bound];
-    if refine
-        cylinder.cyltrisize = 1;                 % maximum triangle size of the bounding cyl
-        cylinder.cyltetvol = 1;                  % maximum tetrahedral volume in the mesh --> CRITICAL PARAMETER FOR THE RESOLUTION OF THE FIELD
-    else
-        cylinder.cyltrisize = 0.5;                 % maximum triangle size of the bounding cyl
-        cylinder.cyltetvol = 0.1;                  % maximum tetrahedral volume in the mesh --> CRITICAL PARAMETER FOR THE RESOLUTION OF THE FIELD
-    end
+    cylinder.cyltrisize = 0.5;                 % maximum triangle size of the bounding cyl
+    cylinder.cyltetvol = 0.1;                  % maximum tetrahedral volume in the mesh --> CRITICAL PARAMETER FOR THE RESOLUTION OF THE FIELD
     cylinder.cylradius = 40*cylinder.stretchfactor;   % define the radius of the bounding cylinder
     cylinder.ndiv=50;                        % division of circle for the bounding cylinder
 
-    
+    % cylinder.cyltrisize = 1;                 % maximum triangle size of the bounding cyl
+    % cylinder.cyltetvol = 1;                  % maximum tetrahedral volume in the mesh --> CRITICAL PARAMETER FOR THE RESOLUTION OF THE FIELD
 
     % define and transform the cylinder, directly obtaining the mesh
     [vol.pos,vol.face,vol.tet]= meshacylinder(cylinder.vol_bottom, cylinder.vol_top, cylinder.cylradius, cylinder.cyltrisize, cylinder.cyltetvol, cylinder.ndiv);
@@ -285,7 +281,7 @@ end
 %% HEADMODEL
 ea_dispt('Starting FEM headmodel generation...')
 
-if (exist([options.root, options.patientname, filesep, 'stimulations', filesep, 'conductivity_tensor_', num2str(side), '.mat'], 'file') == 2) && dbg_load
+if (exist([options.root, options.patientname, filesep, 'stimulations', filesep, 'conductivity_tensor_', num2str(side), '.mat'], 'file') == 2) && not(dbg)
     load([options.root, options.patientname, filesep, 'stimulations', filesep, 'conductivity_tensor_', num2str(side), '.mat'], 'vol', 'cond')
 else
     %% initialize (with cartoon data in debug mode)
@@ -541,9 +537,9 @@ for source = S.sources  % ##### TODO: check if this block allows for multipolar 
                 unipolar=1;
             end
             
-            active_coords = [active_coords, active_contacts(round(size(active_contacts,1)/2),:)]; % find coordinates where the contacts are active
-%             active_coords = [active_coords; coords(logical(U), :) / 1e3];  % find coordinates where the contacts are active in m
-%             active_coords = [active_coords; coords(logical(U), :)];  % find coordinates where the contacts are active in mm
+%           ##### In the line below I substituted boolean(U) with logical(U) #####
+%             active_coords = [active_coords; coords(logical(U) / 1e3, :)];  % find coordinates where the contacts are active in m
+            active_coords = [active_coords; coords(logical(U), :)];  % find coordinates where the contacts are active in mm
             
             ix = [ix;activeidx(source).con(con).ix]; %#ok<*AGROW>  % belonging of an active element to a contact
             voltix_new = [repmat(U(con), length(activeidx(source).con(con).ix), 1), ...
@@ -624,9 +620,8 @@ end
 %% remove electrode
 if options.prefs.machine.vatsettings.aniso_removeElectrode
     el_cond = unique(knnsearch(midpts, elmodel.node));
-%     midpts(el_cond,:) = [];  % ##### original
-%     gradient(el_cond,:) = [];
-    gradient(el_cond,:) = 0;
+    midpts(el_cond,:) = [];
+    gradient(el_cond,:) = [];
 end
 
 

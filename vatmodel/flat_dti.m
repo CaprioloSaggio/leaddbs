@@ -11,7 +11,7 @@ for k = 1:size(dti,3)
         delta_row = (i-1)*size(dti,2);
         delta = delta_slice + delta_row;
         
-        dti_flat(delta+1:delta+size(dti,2),:) = dti(i,:,k,:);
+        dti_flat(delta+size(dti,2):-1:delta+1,:) = dti(i,:,k,:);
     end
 end
 
