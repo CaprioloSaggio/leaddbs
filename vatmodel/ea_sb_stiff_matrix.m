@@ -1,4 +1,4 @@
-function [stiff, diinsy, cols, sysmat] = simbio_stiff_matrix(cond, vol)
+function [stiff, diinsy, cols, sysmat] = ea_sb_stiff_matrix(cond, vol)
 
 % based on SB_CALC_STIFF found in the FieldTrip package
 %
@@ -20,23 +20,15 @@ function [stiff, diinsy, cols, sysmat] = simbio_stiff_matrix(cond, vol)
 
 % TODO: check if I need all those outputs
 
-if(~(size(vol.pos,2)==3))
-    if(size(vol.pos,1)==3)
-        node = vol.pos';
-        warning('Dimension of the nodes of the volume in input should be #nodes x 3!')
-    else
-        error('The volume structure in input has node field with wrong dimensions!')
-    end
-else
-    node = vol.pos;
-end
+node = double(vol.pos);
+
 npnt = size(node,1);
 npnt = int32(npnt);
 
 if isfield(vol,'tet')
     if size(vol.tet,1) == 4
-%         mele = size(vol.tet,1);  % ##### original
-        mele = size(vol.tet,1)*ones(1,6);
+        mele = size(vol.tet,1);  % ##### original
+%         mele = size(vol.tet,1)*ones(1,6);
         elem = vol.tet;  % ##### original
 %         elem = repmat(vol.tet, 1, 6);
     elseif size(vol.tet,2) == 4
@@ -48,25 +40,8 @@ if isfield(vol,'tet')
         error('The volume structure in input has tet (tetrahedrals) field with wrong dimensions!')
     end
     elem = [elem; zeros(4,size(elem,2))];
-elseif isfield(vol,'hex')
-    if size(vol.hex,1) == 8
-        mele = size(vol.hex,1);
-        elem = vol.hex;
-    elseif size(vol.hex,2) == 8
-        mele = size(vol.hex,2);
-        elem = vol.hex';
-    else
-        error('vol.hex has wrong dimensions!')
-    end
 else
-    error('Could not find connectivity information!')
-end
-
-if min(min(elem(1:mele,:))) == 0
-    elem = elem + 1;
-    warning('Numbering of nodes in vol.tet/vol.hex must start at 1 (Fortran numbering)!')
-elseif min(min(elem(1:mele,:))) < 0
-    error('No negative indices for conectivity information allowed!')
+    error("Structure representing the tetrahedral mesh must have a 'tet' field where list of nodes belonging to an element is stored")
 end
 
 if size(vol.tet, 1) == size(cond, 1)
@@ -82,17 +57,13 @@ elem = int32(elem);
 
 if isfield(vol,'tet')
     if ~sb_test_ori(node,elem(1:4,:)')
-        error('Elements have wrong orientation, consider exchanging node 3 and 4');
-    end
-elseif isfield(vol,'hex')
-    if ~sb_test_ori(node,elem')
-        error('Elements have wrong orientation or are degenerated');
+        error('Elements have wrong orientation, consider swapping node 3 and 4');
     end
 end
 
 try
-    [diinsy,cols,sysmat] = ea_calc_stiff_matrix_val_wrapper(node,elem,cond,mele);  % #####
-%     [diinsy,cols,sysmat] = calc_stiff_matrix_val(node,elem,cond,mele);  % ##### original
+%     [diinsy,cols,sysmat] = ea_calc_stiff_matrix_val_wrapper(node,elem,cond,mele);  % #####
+    [diinsy,cols,sysmat] = calc_stiff_matrix_val(node,elem,cond,mele);  % ##### original
     ea_delete([pwd, filesep, 'fort.6']);
 catch err
     if ispc && strcmp(err.identifier,'MATLAB:invalidMEXFile')

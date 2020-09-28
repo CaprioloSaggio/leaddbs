@@ -1,14 +1,12 @@
 function varargout = ea_genvat_aniso(varargin)
 % 
-% RAW
+% RAW & REFINED
 % 
 % this function is called at line 1059 of function ea_stimparams.m in the
 % following fashion:
 % [stimparams(1,side).VAT(el).VAT,volume]=feval(ea_genvat,elstruct(el).coords_mm,getappdata(handles.stimfig,'S'),side,options,stimname,options.prefs.machine.vatsettings.aniso_ethresh,handles.stimfig);
-% 
-% TODO: implement saving of the headmodel and the possibility to just load
-%       it in case it is present
 %
+
 
 if nargin==5
     coords=varargin{1};
@@ -34,21 +32,32 @@ elseif nargin==1  % in this case I just return the name of the method
     end
 end
 
-% convention used to refer to the diffusion tensor file
-dti_tensor = 'dti_tensor.nii';
-SI = 0;
-if SI
-thresh = thresh * 1e3;
+% check if the VTA must be estimated for the side in scope
+if not(any(S.amplitude{1,side}))
+    varargout{1}=nan;
+    varargout{2}=nan;
+    varargout{3}=nan;
+    fprintf('SIDE %d HAS NOT BEEN STIMULATED \n', side);
+    return
 end
-
 
 clear varargin
 
+% conventions and settings
+dti_tensor = 'dti_tensor.nii';
+refine = 1;
+encaps = 0;
+SI = 0;
+
+if SI
+    thresh = thresh * 1e3;
+end
+
 
 %% debug settings
-refine = 0;
 dbg_vis = 0;
 dbg_load = 0;
+dbg_fast = 1;
 dbg = 1;
 if dbg; tic; end
 
@@ -145,28 +154,14 @@ else
     [vol.pos,vol.face,vol.tet]= meshacylinder(cylinder.vol_bottom, cylinder.vol_top, cylinder.cylradius, cylinder.cyltrisize, cylinder.cyltetvol, cylinder.ndiv);
     % vol.pos = vol.pos / 1e3;  % convert from mm to m
     vol.tet = vol.tet(:,1:4);  % eliminate last column, that is the one used for homogeneous representation
-
-
-    %% ________________________________________________________________________
-    %% BOUNDARY NODES
-    % find boundary points in the volume of interest
-    vol.boundary = unique(boundary(vol.pos(:,1), vol.pos(:,2), vol.pos(:,3)));
-    if dbg_vis
-        figure 
-        plot3(vol.pos(:,1), vol.pos(:,2), vol.pos(:,3), 'b.')
-        hold on
-        plot3(vol.pos(vol.boundary, 1), vol.pos(vol.boundary, 2), vol.pos(vol.boundary, 3), 'r.')
-        title('boundary nodes')
-        legend('nodes inside the volume of interest','boundary nodes', 'location', 'northeast')
-    end
     
     
     %% ________________________________________________________________________
     %% mesh refinement with nodes of the electrode    
     if refine
         % refine the cylinder volume in the area of the electrode
-        keepratio = 0.2;  % this is the percentage of faces that will be kept in resampling
-        [elmodel.node, elmodel.face] = meshresample(elmodel.node, elmodel.face(:,1:3), keepratio);
+%         keepratio = 0.2;  % this is the percentage of faces that will be kept in resampling
+%         [elmodel.node, elmodel.face] = meshresample(elmodel.node, elmodel.face(:,1:3), keepratio);
     %     ISO2MESH_SURFBOOLEAN = 'gtsset';  % ##### this gives a problem!
     %     [vol.pos, vol.face] = surfboolean(vol.pos, vol.face(:,1:3), 'resolve', elmodel.node, elmodel.face);
     %     [tempvol.pos, tempvol.face] = surfboolean(vol.pos, vol.face(:,1:3), 'all', elmodel.node, elmodel.face);
@@ -196,6 +191,20 @@ else
     end
     vol.ctr = meshcentroid(vol.pos, vol.tet);
     
+    
+    %% ________________________________________________________________________
+    %% BOUNDARY NODES
+    % find boundary points in the volume of interest
+    vol.boundary = unique(boundary(vol.pos(:,1), vol.pos(:,2), vol.pos(:,3)));
+    if dbg_vis
+        figure 
+        plot3(vol.pos(:,1), vol.pos(:,2), vol.pos(:,3), 'b.')
+        hold on
+        plot3(vol.pos(vol.boundary, 1), vol.pos(vol.boundary, 2), vol.pos(vol.boundary, 3), 'r.')
+        title('boundary nodes')
+        legend('nodes inside the volume of interest','boundary nodes', 'location', 'northeast')
+    end
+    
 
     %% ________________________________________________________________________
     %% electrode transformation and contacts
@@ -222,6 +231,30 @@ else
 
 
     %% ________________________________________________________________________
+    %% ENCAPSULATION LAYER
+    % it is modelled assuming it as a 0.5mm thick layer around the whole length of
+    % the electrode lead
+    vol.r = vecnorm(vol.ctr(:,1:2)')';  % find radial distance of each point in the bounding cylinder from the center of the electrode
+    elrad = elspec.lead_diameter / 2;  % find radius of the electrode lead
+    encapsulation_thickness = 0.5;  % 0.5 mm according to Gunalan et al 2017
+%     encaps_index = find(vol.r>elrad & vol.r<(elrad+encapsulation_thickness) & vol.ctr(:,3)>min(contacts_vertices(:,3)));  % find all elements in the cylinder mesh that correspond to encapsulation tissue
+%     el_cond = find(vol.r<=elrad & vol.ctr(:,3)>min(contacts_vertices(:,3)));  % ##### original
+    encaps_index = find(vol.r>elrad & vol.r<(elrad+encapsulation_thickness) & vol.ctr(:,3)>min(elmodel.node(:,3)));  % find all elements in the cylinder mesh that correspond to encapsulation tissue
+%     if dbg_fast
+%         el_cond = find(vol.r<=elrad & vol.ctr(:,3)>min(elmodel.node(:,3)));  % ##### original
+%     end
+        
+    if dbg_vis
+        figure
+        plot3(vol.ctr(:,1), vol.ctr(:,2), vol.ctr(:,3), 'r.')
+        hold on
+        plot3(vol.ctr(encaps_index,1), vol.ctr(encaps_index,2), vol.ctr(encaps_index,3), 'b.')
+        legend('cylindrical volume nodes', 'fibrotic tissue nodes', 'location', 'northeast')
+        title('encapsulation layer')
+    end
+
+    
+        %% ________________________________________________________________________
     %% transform the electrode model into patient space
     elmodel.node = T*[elmodel.node, ones(size(elmodel.node,1),1)]';
     elmodel.node = elmodel.node(1:3,:)';
@@ -234,25 +267,6 @@ else
     contacts_vertices = [];
     for i=1:length(electrode.contacts)
         contacts_vertices = [contacts_vertices; electrode.contacts(i).vertices]; 
-    end
-
-
-    %% ________________________________________________________________________
-    %% ENCAPSULATION LAYER
-    % it is modelled assuming it as a 0.5mm thick layer around the whole length of
-    % the electrode lead
-    vol.r = vecnorm(vol.ctr(:,1:2)')';  % find radial distance of each point in the bounding cylinder from the center of the electrode
-    elrad = elspec.lead_diameter / 2;  % find radius of the electrode lead
-    encapsulation_thickness = 0.5;  % 0.5 mm according to Gunalan et al 2017
-    encaps_index = find(vol.r>elrad & vol.r<(elrad+encapsulation_thickness) & vol.ctr(:,3)>min(contacts_vertices(:,3)));  % find all elements in the cylinder mesh that correspond to encapsulation tissue
-
-    if dbg_vis
-        figure
-        plot3(vol.ctr(:,1), vol.ctr(:,2), vol.ctr(:,3), 'r.')
-        hold on
-        plot3(vol.ctr(encaps_index,1), vol.ctr(encaps_index,2), vol.ctr(encaps_index,3), 'b.')
-        legend('cylindrical volume nodes', 'fibrotic tissue nodes', 'location', 'northeast')
-        title('encapsulation layer')
     end
 
 
@@ -274,6 +288,7 @@ else
         plot3(elmodel.node(:,1),elmodel.node(:,2),elmodel.node(:,3),'g.');
     end
 
+    
     %% ________________________________________________________________________
     %% SAVE VOLUME AND RELATED VARIABLES    
     save([options.root, options.patientname, filesep, 'stimulations', filesep, 'mesh_', num2str(side), '.mat'], 'vol', 'cylinder', 'T', 'electrode', 'contacts_vertices', 'encaps_index', 'elmodel', 'elrad')
@@ -315,9 +330,12 @@ else
 
     % build grid from volume 
     mesh_grid.pos = build_grid(mri);
-    clear mri anat
+    
+    if not(dbg)
+        clear mri anat
+    end
 
-
+    
     %% find correspondence with conductivity values
     ea_dispt('Defining the conductivity tensor...')
 
@@ -328,13 +346,15 @@ else
     cond_i = knnsearch(mesh_grid.ctr, vol.ctr); % contains the index of the 
                                                 % conductivities that have
                                                 % a match in the mesh                                                
-    clear mesh_grid
+    if not(dbg)
+        clear mesh_grid
+    end
 
-
+    
     %% build headmodel
     % get the diffusion data and convert them to conduction data
-    r_cond = abs(dti) * 0.736;  % S*s/mm^2, McIntyre et al 2004
-%     r_cond = abs(dti - 0.124e-6) * 0.844;  % S*s/mm^2, Tuch et al 2001
+%     r_cond = abs(dti) * 0.736;  % S*s/mm^2, McIntyre et al 2004
+    r_cond = abs(dti - 0.124e-6) * 0.844;  % S*s/mm^2, Tuch et al 2001
     clear dti
 
     % rearrange conductivity tensor
@@ -351,9 +371,11 @@ else
     % rearrange columns of the conductivity as simbio wants them in the order
     % xx, yy, zz, xy, yz, xz while fsl gives in output xx xy xz yy yz zz
     cond = [cond(:,1), cond(:,4), cond(:,6), cond(:,2), cond(:,5), cond(:,3)];
-
-    clear cond3d cond_t cond_i r_cond i
-
+    
+    if not(dbg)
+        clear cond3d cond_t cond_i r_cond i
+    end
+    
     if dbg
         isotropic_conductivity_stn = teststn(vol, cond, side, options);  % it is returned in S/mm
         fprintf("\nDEBUG ________________________________________________________\n")
@@ -373,16 +395,39 @@ else
     cond_encapsulation = 0.05 * 1e-3;  % found in "isotropic conductivities", but according to Gunalan et al 2017 it can be 0.05±0.2 S/m
 
     % el_cond = unique(knnsearch(vol.ctr, elmodel.ctr));
-    el_cond = unique(knnsearch(vol.ctr, elmodel.node));  % index of all the elements in cylinder corresponding to electrode contacts
-    el_cond(vol.r(el_cond,:)>elrad) = [];
-    cond(el_cond,:) = cond_insulation;  % insulation conductivity (isotropic)
+    if dbg_fast
+        el_cond = unique(knnsearch(vol.ctr, elmodel.node, 'K', 5));  % index of all the elements in cylinder corresponding to electrode contacts   
+    else
+        el_cond = [];
+        for i=1:length(electrode.insulation)
+            el_cond = [el_cond; find(insurface(electrode.insulation(i).vertices*1e3, electrode.insulation(i).faces, vol.ctr*1e3))];
+        end
+        el_cond = unique(el_cond);
+    end
+    cond(el_cond,:) = repmat([repmat(cond_insulation,1,3) zeros(1,3)], length(el_cond), 1);  %#ok<FNDSB> % insulation conductivity (isotropic)
 
     % add encapsulation layer (fibrotic tissue forming around the electrodes)
-    cond(encaps_index,:) = cond_encapsulation;
-
-    con_cond = unique(knnsearch(vol.pos, contacts_vertices));  % #####
+    if encaps
+        cond(encaps_index,:) = repmat([repmat(cond_encapsulation,1,3) zeros(1,3)], length(encaps_index),1);
+    end
+    
+    % find contact elements
+    if dbg_fast   
+        con_cond = unique(knnsearch(vol.ctr, contacts_vertices));
+    else
+        inside_active_contacts = false(size(vol.ctr,1),1);
+        k = 1; 
+        for c = 1:length(electrode.contacts)
+            inside_active_contacts = [inside_active_contacts | insurface(electrode.contacts(c).vertices*1e3, electrode.contacts(c).faces, vol.ctr*1e3)]; % #####
+%             inside_active_contacts = inside_active_contacts | inpolyhedron(electrode.contacts(c), vol.ctr); % #####
+        end
+        con_cond = unique(find(inside_active_contacts));
+    end
+%     con_cond = knnsearch(vol.ctr, contacts_vertices, 'K', k);  % ##### original, substituted with line below
+%     con_cond = [];
+%     con_cond = unique([con_cond; find(inside_active_contacts)]);
     % con_cond(vol.r(con_cond,:)>elrad) = [];
-    cond(con_cond,:) = cond_contacts;  % contact conductivity (isotropic)
+    cond(con_cond,:) = repmat([repmat(cond_contacts,1,3) zeros(1,3)], length(con_cond), 1);  % contact conductivity (isotropic)
 
     if SI
         % convert from mm to m
@@ -409,19 +454,24 @@ else
     %% ________________________________________________________________________
     %% COMPUTE CONDUCTION MODEL
     ea_dispt('Computing the conduction model...')
-
+    
+%     test = cond;
+%     cond = cond(:,1);  % #####
+    
     try
-        vol.stiff = simbio_stiff_matrix(cond, vol);
+        vol.stiff = ea_sb_stiff_matrix(cond, vol);
+%         vol.stiff = simbio_stiff_matrix(cond, vol);
     %     vol.stiff = sb_calc_stiff(cond, vol);
     catch
         vol.tet(:, [3, 4]) = vol.tet(:, [4, 3]);  % necessary not to get 
                                                   % an error from sb_calc_stiff 
                                                   % relative to orientation
-        vol.stiff = simbio_stiff_matrix(cond, vol);
+        vol.stiff = ea_sb_stiff_matrix(cond, vol);
+%         vol.stiff = simbio_stiff_matrix(cond, vol);
     %     vol.stiff = sb_calc_stiff(cond, vol);
     end
     vol.method = 'simbio';
-    % vol.stiff = abs(vol.stiff);
+%     vol.stiff = abs(vol.stiff); 
 
     % check if the stiffness matrix has all the elements in the diagonal
     % positive, and in case, substitute null values with a very small one for
@@ -439,6 +489,9 @@ else
     end
 
     negative_diag_stiff = find(diag(vol.stiff)<0);
+    if not(isempty(negative_diag_stiff)) & not(dbg)
+        error("Error in the conductivity values, some of the conductiviety values are negative")
+    end
     try
         vol.stiff(negative_diag_stiff,negative_diag_stiff) = abs(vol.stiff(negative_diag_stiff,negative_diag_stiff));
     catch
@@ -447,10 +500,12 @@ else
             vol.stiff(j,j) = abs(vol.stiff(j,j));           % memory outage (8GB RAM)
         end
     end
-
-    clear negative_diag_stiff null_diag_stiff
     
-   save([options.root, options.patientname, filesep, 'stimulations', filesep, 'conductivity_tensor_', num2str(side), '.mat'], 'vol', 'cond', '-v7.3')
+    if not(dbg)
+        clear negative_diag_stiff null_diag_stiff
+    end
+    
+    save([options.root, options.patientname, filesep, 'stimulations', filesep, 'conductivity_tensor_', num2str(side), '.mat'], 'vol', 'cond', '-v7.3')
 end
 
 
@@ -492,6 +547,8 @@ gradient = cell(length(S.sources), 1);
 
 %%
 active_coords = [];
+% if refine; k = 10; else; k = 2; end
+k = 1;
 for source = S.sources  % ##### TODO: check if this block allows for multipolar stimulation, although it was not required by the project #####
     active_contacts = [];
     ix = [];
@@ -514,7 +571,7 @@ for source = S.sources  % ##### TODO: check if this block allows for multipolar 
             % find elements in mesh corresponding to nodes of the active
             % contact in scope
 %             vol.active = unique(knnsearch(vol.ctr, active_contacts));  % ##### original
-            vol.active = unique(knnsearch(vol.pos, active_contacts));  % #####
+            vol.active = unique(knnsearch(vol.pos, active_contacts, 'K', k));  % #####
 %             vol.active = unique(knnsearch(vol.pos, elfv(con).vertices));
 %             vol.active = con_cond;  % #####
             
@@ -541,7 +598,7 @@ for source = S.sources  % ##### TODO: check if this block allows for multipolar 
                 unipolar=1;
             end
             
-            active_coords = [active_coords, active_contacts(round(size(active_contacts,1)/2),:)]; % find coordinates where the contacts are active
+            active_coords = [active_coords, active_contacts(round(size(active_contacts,1)/3),:)]; % find coordinates where the contacts are active
 %             active_coords = [active_coords; coords(logical(U), :) / 1e3];  % find coordinates where the contacts are active in m
 %             active_coords = [active_coords; coords(logical(U), :)];  % find coordinates where the contacts are active in mm
             
@@ -590,7 +647,10 @@ for source = S.sources  % ##### TODO: check if this block allows for multipolar 
         gradient{source} = zeros(size(vol.tet,1),3);
     end
 end
-clear voltix_new U activeidx elec_tet_ix ac con
+
+if not(dbg)
+clear voltix_new U activeidx elec_tet_ix ac con active_contacts voltix ix stimsource
+end
 
 % combine gradients from all sources
 gradient=gradient{1}+gradient{2}+gradient{3}+gradient{4}; 
@@ -689,19 +749,6 @@ end  % function
 
 
 
-function ctr = tetctr(pos, tet)
-% INPUT
-% mesh_tet: tetrahedral mesh containing at least the fields 'pos' (nodes 
-%           coordinates, of size Nx3) and 'tet' (elements, of size Mx4)
-% OUTPUT
-% ctr: centroids of the tetrahedral elements in a mesh (size Mx3)
-
-% ctr = reshape(pos(tet(1:lentet,1:4),:), [lentet, 4, 3]);
-ctr = reshape(pos(tet,:), [size(tet, 1), 4, 3]);
-ctr = squeeze(mean(ctr, 2));
-end  % subfunction
-
-
 
 function potential = ea_apply_dbs(vol,elec,val,unipolar,constvol,boundarynodes)
 if constvol
@@ -726,13 +773,11 @@ else
     rhs = zeros(size(vol.pos,1),1);
     uvals=unique(val(:,2));
     if unipolar && length(uvals)==1
-        elec_center_id = ea_find_elec_center(elec,vol.pos);  % ##### original
-%         elec_center_id = ea_find_elec_center(elec,vol.ctr);  % #####
+        elec_center_id = ea_find_elec_center(elec,vol.pos);
         rhs(elec_center_id) = val(1,1);
     else
         for v=1:length(uvals)
-            elec_center_id = ea_find_elec_center(elec(val(:,2)==uvals(v)),vol.pos);  % ##### original
-%             elec_center_id = ea_find_elec_center(elec(val(:,2)==uvals(v)),vol.ctr);  % #####
+            elec_center_id = ea_find_elec_center(elec(val(:,2)==uvals(v)),vol.pos);
             thesevals=val(val(:,2)==uvals(v),1);
             rhs(elec_center_id) = thesevals(1);
         end
@@ -741,7 +786,7 @@ else
     end
 end
 
-% perform preconditioning on the stiffness matrix to make it faster teh next computations
+% perform preconditioning on the stiffness matrix to make it faster the next computations
 [stiff, rhs] = ea_dbs(vol.stiff,rhs,dirinodes,dirival);  
 
 

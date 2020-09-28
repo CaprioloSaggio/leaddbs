@@ -20,6 +20,14 @@ function tf=insurface(node,face,points)
 %
 
 [no,el]=fillsurf(node,face);
+
+% ##### block added
+% if sum(el(:,size(el,2)))== size(el,1)
+%     el = el(:,1:end-1);
+% end
+el = el(:,1:size(points,2)+1);
+% ##### block added
+
 tf=tsearchn(no,el,points);
 
 tf(~isnan(tf))=1;

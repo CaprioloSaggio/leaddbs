@@ -53,8 +53,8 @@ ea_dispt('Preparing VAT...');
 vat.tET=vat.ET>thresh;
 vat.tpos=vat.pos(vat.tET,:);
 %nvat.tpos=nvat.pos(vat.tET,:);
-outliers=ea_removeoutliers(vat.tpos,mean(dpvx,1),voltix,constvol);
-vat.tpos(outliers,:)=[];
+% outliers=ea_removeoutliers(vat.tpos,mean(dpvx,1),voltix,constvol);
+% vat.tpos(outliers,:)=[];
 %nvat.tpos(outliers,:)=[];
 if vizz
     figure, plot3(vat.tpos(:,1),vat.tpos(:,2),vat.tpos(:,3),'r.');

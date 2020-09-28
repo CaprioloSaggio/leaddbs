@@ -74,7 +74,7 @@ end
 
 hmchanged=ea_headmodel_changed(options,side,elstruct); % can only use this test once.
 assignin('caller','hmchanged',hmchanged);
-if hmchanged
+if 1 % hmchanged
     ea_dispt('Headmodel needs to be re-calculated. This may take a while...');
 
     cnt=1;

@@ -124,7 +124,8 @@ if(isempty(cmdopt)) % default run
 %     end
     
 else
-	system([' "' mcpath('tetgen') exesuff '"  -A -T1e-5 -q4 -a -Y ' cmdopt ' "' mwpath('post_vmesh.poly') '"',cmdsuffix]);
+	system([' "' mcpath('tetgen') exesuff '"  -A -T1e-5 -q4 -a -Y' cmdopt ' "' mwpath('post_vmesh.poly') '"',cmdsuffix]);  % ##### original
+%     system([' "' mcpath('tetgen') exesuff '"  -A -T1e-5 -q4 -a -Y -M0/1 -p/0.001' cmdopt ' "' mwpath('post_vmesh.poly') '"',cmdsuffix]);  % #####
 end
 
 % read in the generated mesh
