@@ -57,7 +57,7 @@ end
 %% debug settings
 dbg_vis = 0;
 dbg_load = 0;
-dbg_fast = 1;
+dbg_fast = 0;
 dbg = 1;
 if dbg; tic; end
 
@@ -340,12 +340,13 @@ else
     ea_dispt('Defining the conductivity tensor...')
 
     % build the KDtree
-    mesh_grid.ctr = KDTreeSearcher(mesh_grid.pos);
+    mesh_grid.treepos = KDTreeSearcher(mesh_grid.pos);
 
-    % run Nearest Neighbours
-    cond_i = knnsearch(mesh_grid.ctr, vol.ctr); % contains the index of the 
-                                                % conductivities that have
-                                                % a match in the mesh                                                
+    % run Nearest Neighbours to get correspondence between mesh elements 
+    % and image voxels
+    cond_index = knnsearch(mesh_grid.treepos, vol.ctr); % contains the index of the 
+                                                        % conductivities that have
+                                                        % a match in the mesh                                                
     if not(dbg)
         clear mesh_grid
     end
@@ -353,27 +354,27 @@ else
     
     %% build headmodel
     % get the diffusion data and convert them to conduction data
-%     r_cond = abs(dti) * 0.736;  % S*s/mm^2, McIntyre et al 2004
-    r_cond = abs(dti - 0.124e-6) * 0.844;  % S*s/mm^2, Tuch et al 2001
+%     raw_cond_tensor = abs(dti) * 0.736;  % S*s/mm^2, McIntyre et al 2004
+    raw_cond_tensor = abs(dti - 0.124e-6) * 0.844;  % S*s/mm^2, Tuch et al 2001
     clear dti
 
     % rearrange conductivity tensor
-    cond_t = zeros([prod(size(r_cond, 1:3)), 6]);
+    cond_tensor = zeros([prod(size(raw_cond_tensor, 1:3)), 6]);
     for i=1:6
-        cond3d = r_cond(:,:,:,i);   % this passage is added for more readibility
-        cond_t(:, i) = reshape(cond3d, [numel(cond3d), 1]);
+        cond3d = raw_cond_tensor(:,:,:,i);   % this passage is added for more readibility
+        cond_tensor(:, i) = reshape(cond3d, [numel(cond3d), 1]);
     end
-%     cond_t = flat_dti(r_cond);
+%     cond_tensor = flat_dti(r_cond);
     
     % select only the conductivities that match elements in the tetrahedral mesh
-    cond = cond_t(cond_i, :);
+    cond = cond_tensor(cond_index, :);
 
     % rearrange columns of the conductivity as simbio wants them in the order
     % xx, yy, zz, xy, yz, xz while fsl gives in output xx xy xz yy yz zz
     cond = [cond(:,1), cond(:,4), cond(:,6), cond(:,2), cond(:,5), cond(:,3)];
     
     if not(dbg)
-        clear cond3d cond_t cond_i r_cond i
+        clear cond3d cond_tensor cond_index raw_cond_tensor i
     end
     
     if dbg
@@ -390,8 +391,8 @@ else
     % electrode element to the insulating value of 10^-16 S/m and then I apply the
     % contact conductivity of 10^8 S/m to all the voxels near to the centroid
     % of a contact element. Values are taken from Horn et al 2017
-    cond_contacts = 1e5;  % in S/mm  % Salvador et al 2012 states this should be 2 S/m, but in that case it is transcranial stimulation
-    cond_insulation = 1e-19;  % in S/mm
+    cond_contacts = 0.001;  % 1e8 * 1e-3;  % in S/mm  % Salvador et al 2012 states this should be 2 S/m, but in that case it is transcranial stimulation
+    cond_insulation = 1e-16 * 1e-3;  % in S/mm
     cond_encapsulation = 0.05 * 1e-3;  % found in "isotropic conductivities", but according to Gunalan et al 2017 it can be 0.05±0.2 S/m
 
     % el_cond = unique(knnsearch(vol.ctr, elmodel.ctr));
@@ -416,19 +417,33 @@ else
         con_cond = unique(knnsearch(vol.ctr, contacts_vertices));
     else
         inside_active_contacts = false(size(vol.ctr,1),1);
-        k = 1; 
-        for c = 1:length(electrode.contacts)
+%         k = 1; 
+        active_contacts = find(S.activecontacts{1,side});
+        contact_source = zeros(length(active_contacts),1);
+        for c = active_contacts  % 1:length(electrode.contacts)
             inside_active_contacts = [inside_active_contacts | insurface(electrode.contacts(c).vertices*1e3, electrode.contacts(c).faces, vol.ctr*1e3)]; % #####
 %             inside_active_contacts = inside_active_contacts | inpolyhedron(electrode.contacts(c), vol.ctr); % #####
+
+%             active_contacts_coords = electrode.contacts(c).vertices;  % in mm  % #####
+%             vol.active = unique(knnsearch(vol.pos, active_contacts_coords));  % #####
+%             contact_source = ea_find_elec_center(vol.active(c), vol.pos);  % #####
+%             inside_active_contacts(inside_active_contacts==contact_source) = [];  % #####
+%             clear vol.active  % #####
+
+%             active_pos = unique(knnsearch(vol.pos, electrode.contacts(c).vertices));
+%             center_id = ea_find_elec_center(active_pos, vol.pos);
+%             inside_active_contacts(any((vol.tet==center_id)')) = 0;
+
         end
-        con_cond = unique(find(inside_active_contacts));
+        con_cond = find(inside_active_contacts);
     end
 %     con_cond = knnsearch(vol.ctr, contacts_vertices, 'K', k);  % ##### original, substituted with line below
 %     con_cond = [];
 %     con_cond = unique([con_cond; find(inside_active_contacts)]);
     % con_cond(vol.r(con_cond,:)>elrad) = [];
-    cond(con_cond,:) = repmat([repmat(cond_contacts,1,3) zeros(1,3)], length(con_cond), 1);  % contact conductivity (isotropic)
-
+    cond(con_cond,:) = repmat([repmat(cond_contacts,1,3) zeros(1,3)], length(con_cond), 1);  % contact conductivity (isotropic)  
+    
+    
     if SI
         % convert from mm to m
         cond = cond * 1e3;
@@ -439,7 +454,7 @@ else
     end
 
     if dbg_vis
-        if SI; scale = 1e3; else scale = 1; end
+        if SI; scale = 1e3; else; scale = 1; end
         figure; 
         plot3(vol.ctr(el_cond,1)*scale, vol.ctr(el_cond,2)*scale, vol.ctr(el_cond,3)*scale, 'b.')
         hold on
@@ -450,7 +465,7 @@ else
         legend('insulation', 'contact', 'scar tissue', 'location', 'northwest')
     end
 
-
+    
     %% ________________________________________________________________________
     %% COMPUTE CONDUCTION MODEL
     ea_dispt('Computing the conduction model...')
@@ -478,26 +493,30 @@ else
     % the sake of solvability of the Cholesky factorization during potential
     % computation. Similar approach with negative values on the diagonal, that
     % are considered in their absolute value.
-    null_diag_stiff = find(diag(vol.stiff)==0);
-    try
-        vol.stiff(null_diag_stiff, null_diag_stiff) = eps;
-    catch
-        for i=1:length(null_diag_stiff)     % I had to arrange the check this way, 
-            j = null_diag_stiff(i);         % because sometimes MATLAB gives  
-            vol.stiff(j,j) = eps;           % problems of memory outage with 8GB 
-        end                                 % RAM
-    end
-
-    negative_diag_stiff = find(diag(vol.stiff)<0);
-    if not(isempty(negative_diag_stiff)) & not(dbg)
-        error("Error in the conductivity values, some of the conductiviety values are negative")
-    end
-    try
-        vol.stiff(negative_diag_stiff,negative_diag_stiff) = abs(vol.stiff(negative_diag_stiff,negative_diag_stiff));
-    catch
-        for i=1:length(negative_diag_stiff)                 % I had to arrange the check this way, 
-            j = negative_diag_stiff(i);                     % otherwise MATLAB gives problems of 
-            vol.stiff(j,j) = abs(vol.stiff(j,j));           % memory outage (8GB RAM)
+    stiff_diag = full(diag(vol.stiff));
+    null_diag_stiff = find(stiff_diag==0);
+%     try
+%         null_diag_stiff_index = [null_diag_stiff  null_diag_stiff];
+%         vol.stiff(null_diag_stiff_index) = eps;
+%     catch
+        for i=1:length(null_diag_stiff)                          % I had to arrange the check this way, 
+            j = null_diag_stiff(i);                              % because sometimes MATLAB gives  
+            vol.stiff(j,j) = eps;                                % problems of memory outage with 8GB 
+        end                                                      % RAM
+%     end
+    
+    negative_diag_stiff = find(stiff_diag<0);
+%     if not(isempty(negative_diag_stiff)) && not(dbg)
+%         error("Error in the conductivity values, some of the conductiviety values are negative")
+%     end
+%     try
+%         negative_diag_stiff_index = [negative_diag_stiff negative_diag_stiff];
+%         vol.stiff(negative_diag_stiff_index) = abs(vol.stiff(negative_diag_stiff_index));
+%     catch
+    if not(isempty(negative_diag_stiff))
+        for i=1:length(negative_diag_stiff)                         % I had to arrange the check this way, 
+            j = negative_diag_stiff(i);                             % otherwise MATLAB gives problems of 
+            vol.stiff(j,j) = abs(vol.stiff(j,j));                   % memory outage (8GB RAM)
         end
     end
     
@@ -505,7 +524,7 @@ else
         clear negative_diag_stiff null_diag_stiff
     end
     
-    save([options.root, options.patientname, filesep, 'stimulations', filesep, 'conductivity_tensor_', num2str(side), '.mat'], 'vol', 'cond', '-v7.3')
+     save([options.root, options.patientname, filesep, 'stimulations', filesep, 'conductivity_tensor_', num2str(side), '.mat'], 'vol', 'cond', '-v7.3')
 end
 
 
@@ -571,7 +590,7 @@ for source = S.sources  % ##### TODO: check if this block allows for multipolar 
             % find elements in mesh corresponding to nodes of the active
             % contact in scope
 %             vol.active = unique(knnsearch(vol.ctr, active_contacts));  % ##### original
-            vol.active = unique(knnsearch(vol.pos, active_contacts, 'K', k));  % #####
+            vol.active = unique(knnsearch(vol.pos, active_contacts));  % #####
 %             vol.active = unique(knnsearch(vol.pos, elfv(con).vertices));
 %             vol.active = con_cond;  % #####
             

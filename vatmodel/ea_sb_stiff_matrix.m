@@ -62,7 +62,7 @@ if isfield(vol,'tet')
 end
 
 try
-%     [diinsy,cols,sysmat] = ea_calc_stiff_matrix_val_wrapper(node,elem,cond,mele);  % #####
+    [diinsy,cols,sysmat] = ea_calc_stiff_matrix_val_wrapper(node,elem,cond,mele);  % #####
     [diinsy,cols,sysmat] = calc_stiff_matrix_val(node,elem,cond,mele);  % ##### original
     ea_delete([pwd, filesep, 'fort.6']);
 catch err
