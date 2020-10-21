@@ -1,5 +1,5 @@
 function varargout = ea_vatsettings_aniso(varargin)
-% EA_VATSETTINGS_HORN MATLAB code for ea_vatsettings_horn.fig
+% EA_VATSETTINGS_HORN MATLAB code for ea_vatsettings_aniso.fig
 %      EA_VATSETTINGS_HORN, by itself, creates a new EA_VATSETTINGS_HORN or raises the existing
 %      singleton*.
 %
@@ -11,18 +11,14 @@ function varargout = ea_vatsettings_aniso(varargin)
 %
 %      EA_VATSETTINGS_HORN('Property','Value',...) creates a new EA_VATSETTINGS_HORN or raises the
 %      existing singleton*.  Starting from the left, property value pairs are
-%      applied to the GUI before ea_vatsettings_horn_OpeningFcn gets called.  An
+%      applied to the GUI before ea_vatsettings_aniso_OpeningFcn gets called.  An
 %      unrecognized property name or invalid value makes property application
-%      stop.  All inputs are passed to ea_vatsettings_horn_OpeningFcn via varargin.
+%      stop.  All inputs are passed to ea_vatsettings_aniso_OpeningFcn via varargin.
 %
 %      *See GUI Options on GUIDE's Tools menu.  Choose "GUI allows only one
 %      instance to run (singleton)".
 %
 % See also: GUIDE, GUIDATA, GUIHANDLES
-
-% Edit the above text to modify the response to help ea_vatsettings_horn
-
-% Last Modified by GUIDE v2.5 22-Jan-2020 08:56:43
 
 % Begin initialization code - DO NOT EDIT
 gui_Singleton = 1;
@@ -58,14 +54,20 @@ handles.output = hObject;
 % Update handles structure
 guidata(hObject, handles);
 
-set(handles.setfig,'name','FEM-based VAT model setting');
+set(handles.setfig,'name','FEM-based VTA model setting');
 
 prefs=ea_prefs('');
 
-set(handles.ethresh,'String',num2str(prefs.machine.vatsettings.horn_ethresh));
+set(handles.ethresh,'String',num2str(prefs.machine.vatsettings.aniso_ethresh));
+set(handles.encaps,'String',num2str(prefs.machine.vatsettings.aniso_cond_encapsulation));
+set(handles.insulation,'String',num2str(prefs.machine.vatsettings.aniso_cond_insulation));
+set(handles.contacts,'String',num2str(prefs.machine.vatsettings.aniso_cond_contacts));
+tensor_name = get(prefs.machine.vatsettings.aniso_tensor_name, 'String');
+set(handles.tensor_name,'String',tensor_name);
 options=ea_defaultoptions;
 
 set(handles.removeElectrode,'Value',prefs.machine.vatsettings.aniso_removeElectrode);
+set(handles.add_encaps,'Value',prefs.machine.vatsettings.aniso_encaps);
 
 ea_fillpresetpopups(handles);
 
@@ -162,8 +164,13 @@ function savebutn_Callback(hObject, eventdata, handles)
 prefs=ea_prefs('');
 
 vatsettings=prefs.machine.vatsettings;
-vatsettings.horn_ethresh=str2double(get(handles.ethresh,'String'));
+vatsettings.aniso_ethresh=str2double(get(handles.ethresh,'String'));
+vatsettings.aniso_cond_encapsulation = str2double(get(handles.encaps,'String'));
+vatsettings.aniso_cond_insulation = str2double(get(handles.insulation,'String'));
+vatsettings.aniso_cond_contacts = str2double(get(handles.contacts,'String'));
+vatsettings.aniso_tensor_name = handles.tensor_name;
 vatsettings.aniso_removeElectrode=get(handles.removeElectrode,'Value');
+vatsettings.aniso_encaps=get(handles.add_encaps,'Value');
 ea_setprefs('vatsettings',vatsettings);
 
 delete(handles.setfig);
@@ -238,51 +245,6 @@ if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgr
     set(hObject,'BackgroundColor','white');
 end
 
-
-
-% --- Executes on button press in useatlas.
-function useatlas_Callback(hObject, eventdata, handles)
-% hObject    handle to useatlas (see GCBO)
-% eventdata  reserved - to be defined in a future version of MATLAB
-% handles    structure with handles and user data (see GUIDATA)
-
-% Hint: get(hObject,'Value') returns toggle state of useatlas
-ea_refreshgmwm(handles);
-
-function ea_refreshgmwm(handles)
-switch get(handles.useatlas,'Value')
-    case 1
-        set(handles.smgm_txt,'visible','on');
-        set(handles.atlassetpopup,'visible','on');
-    case 0
-        set(handles.smgm_txt,'visible','off');
-        set(handles.atlassetpopup,'visible','off');
-end
-
-
-% --- Executes on selection change in atlassetpopup.
-function atlassetpopup_Callback(hObject, eventdata, handles)
-% hObject    handle to atlassetpopup (see GCBO)
-% eventdata  reserved - to be defined in a future version of MATLAB
-% handles    structure with handles and user data (see GUIDATA)
-
-% Hints: contents = cellstr(get(hObject,'String')) returns atlassetpopup contents as cell array
-%        contents{get(hObject,'Value')} returns selected item from atlassetpopup
-
-
-% --- Executes during object creation, after setting all properties.
-function atlassetpopup_CreateFcn(hObject, eventdata, handles)
-% hObject    handle to atlassetpopup (see GCBO)
-% eventdata  reserved - to be defined in a future version of MATLAB
-% handles    empty - handles not created until after all CreateFcns called
-
-% Hint: popupmenu controls usually have a white background on Windows.
-%       See ISPC and COMPUTER.
-if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
-    set(hObject,'BackgroundColor','white');
-end
-
-
 % --- Executes on button press in removeElectrode.
 function removeElectrode_Callback(hObject, eventdata, handles)
 % hObject    handle to removeElectrode (see GCBO)
@@ -291,3 +253,4 @@ function removeElectrode_Callback(hObject, eventdata, handles)
 
 % Hint: get(hObject,'Value') returns toggle state of removeElectrode
 ea_setprefs('vatsettings.aniso_removeElectrode',get(handles.removeElectrode,'Value'));
+

@@ -1054,7 +1054,12 @@ for el=1:length(elstruct)
             % hidden.
             keyboard
         else % single patient
-            [stimparams(1,side).VAT(el).VAT,volume]=feval(ea_genvat,elstruct(el).coords_mm,getappdata(handles.stimfig,'S'),side,options,stimname,options.prefs.machine.vatsettings.horn_ethresh,handles.stimfig);
+            if isequal(S.model, 'Anisotropic')
+                ethresh = options.prefs.machine.vatsettings.aniso_ethresh;
+            else
+                ethresh = options.prefs.machine.vatsettings.horn_ethresh;
+            end
+            [stimparams(1,side).VAT(el).VAT,volume]=feval(ea_genvat,elstruct(el).coords_mm,getappdata(handles.stimfig,'S'),side,options,stimname,ethresh,handles.stimfig);
             stimparams(1,side).volume=volume;
             flix=1;
         end

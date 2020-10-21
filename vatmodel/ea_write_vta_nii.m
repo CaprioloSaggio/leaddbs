@@ -45,7 +45,12 @@ elstruct(1).coords_mm=ea_resolvecoords(markers,options);
 elstruct(1).trajectory=trajectory;
 elstruct(1).name=options.patientname;
 elstruct(1).markers=markers;
-if options.prefs.machine.vatsettings.horn_removeElectrode
+if isequal(S.model, 'Anisotropic')
+    removeElectrode = options.prefs.machine.vatsettings.aniso_removeElectrode;
+else
+    removeElectrode = options.prefs.machine.vatsettings.horn_removeElectrode;
+end
+if removeElectrode
     vat = jr_remove_electrode(vat,elstruct,mesh,side,elspec);
 end
 ea_dispt('Preparing VAT...');
@@ -53,8 +58,8 @@ ea_dispt('Preparing VAT...');
 vat.tET=vat.ET>thresh;
 vat.tpos=vat.pos(vat.tET,:);
 %nvat.tpos=nvat.pos(vat.tET,:);
-% outliers=ea_removeoutliers(vat.tpos,mean(dpvx,1),voltix,constvol);
-% vat.tpos(outliers,:)=[];
+outliers=ea_removeoutliers(vat.tpos,mean(dpvx,1),voltix,constvol);
+vat.tpos(outliers,:)=[];
 %nvat.tpos(outliers,:)=[];
 if vizz
     figure, plot3(vat.tpos(:,1),vat.tpos(:,2),vat.tpos(:,3),'r.');
