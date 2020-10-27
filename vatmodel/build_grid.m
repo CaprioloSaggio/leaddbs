@@ -22,6 +22,7 @@ nodes = nodes + .5;
 % mri.mat is the field containing the transformation from voxel to patient space
 T = mri.mat; 
 
+
 % converting position of meshpoints to the head coordinate system
 nodes = ft_warp_apply(T, nodes, 'homogeneous');  
 

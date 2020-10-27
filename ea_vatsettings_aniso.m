@@ -62,8 +62,13 @@ set(handles.ethresh,'String',num2str(prefs.machine.vatsettings.aniso_ethresh));
 set(handles.encaps,'String',num2str(prefs.machine.vatsettings.aniso_cond_encapsulation));
 set(handles.insulation,'String',num2str(prefs.machine.vatsettings.aniso_cond_insulation));
 set(handles.contacts,'String',num2str(prefs.machine.vatsettings.aniso_cond_contacts));
-tensor_name = get(prefs.machine.vatsettings.aniso_tensor_name, 'String');
-set(handles.tensor_name,'String',tensor_name);
+try
+    set(handles.tensor_name,'String',prefs.machine.vatsettings.aniso_tensor_name);
+catch
+    tensor_name = get(prefs.machine.vatsettings.aniso_tensor_name, 'String');
+    set(handles.tensor_name,'String',tensor_name);
+end
+
 options=ea_defaultoptions;
 
 set(handles.removeElectrode,'Value',prefs.machine.vatsettings.aniso_removeElectrode);
@@ -253,4 +258,22 @@ function removeElectrode_Callback(hObject, eventdata, handles)
 
 % Hint: get(hObject,'Value') returns toggle state of removeElectrode
 ea_setprefs('vatsettings.aniso_removeElectrode',get(handles.removeElectrode,'Value'));
+
+% --- Executes on button press in reset.
+function reset_Callback(hObject, eventdata, handles)
+% hObject    handle to removeElectrode (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+% Hint: get(hObject,'Value') returns toggle state of removeElectrode
+prefs=ea_prefs('');
+set(handles.ethresh,'String',num2str(0.2));
+set(handles.encaps,'String',num2str(0.5 * 1e-3));
+set(handles.insulation,'String',num2str(1e-19));
+set(handles.contacts,'String',num2str(1e5));
+set(handles.tensor_name,'String','dti_tensor.mat');
+options=ea_defaultoptions;
+
+set(handles.removeElectrode,'Value',1);
+set(handles.add_encaps,'Value',1);
 

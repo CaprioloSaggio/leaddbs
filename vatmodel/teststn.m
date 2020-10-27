@@ -1,7 +1,7 @@
-function isotropic_conductivity_stn = teststn(vol, cond, side, options)
+function mean_isotropic_conductivity_stn = teststn(vol, cond, side, options)
 
-% Here's how to check the conductivity values of the STN, expected to be
-% around 0.33, as it is grey matter
+% Here's how to check the conductivity values of the STN (subthalamic 
+% nucleus), expected to be around 0.33, as it is grey matter
 
 try
     load([options.root, options.patientname, filesep, 'atlases', filesep, options.atlasset, filesep, 'stn.mat']);
@@ -16,18 +16,39 @@ catch
 end
 
 % select side
-if side==1
+if side == 1
     stn = stnl;
-elseif side==2
-    stn=stnr;
+elseif side == 2
+    stn = stnr;
 end
 
 % find conductivity in the STN
-test = unique(knnsearch(vol.ctr, stn));
-test_c = cond(test, :);
-test_cm = mean(test_c);
+vol_stn = unique(knnsearch(vol.ctr, stn));
+cond_stn = cond(vol_stn, :);
 
-isotropic_conductivity_stn = isoCond(test_cm);
+% compute anisotropic index and equivalent isotropic conductivity
+isotropic_conductivity_stn = zeros([size(cond_stn,1),1]);
+aniso_index = zeros([size(cond_stn,1),1]);
+for i = 1:size(cond_stn,1)
+    isotropic_conductivity_stn(i) = isoCond(cond_stn(i,:));
+    S = makeSymmetric(cond_stn(i,:));
+    [~,D] = eig(S);
+    D = diag(D);
+    D = sort(D, 'descend');  % order eigenvalues from the highest to the lowest
+    aniso_index(i) = 1 - (D(3) / D(1));
+end
+
+% compute summary values for the whole stn volume
+mean_cond_stn = mean(cond_stn);
+mean_isotropic_conductivity_stn = isoCond(mean_cond_stn);
+mean_aniso_index = mean(aniso_index);
+
+% save interesting variables
+clear i S D vol_stn
+if options.savepath(end) == filesep
+    options.savepath(end) = [];
+end
+save([options.savepath, filesep, 'teststn_output.mat'])
 
 end  % function
 

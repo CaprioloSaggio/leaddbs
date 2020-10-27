@@ -5,11 +5,8 @@ function varargout = ea_genvat_aniso(varargin)
 % [stimparams(1,side).VAT(el).VAT,volume]=feval(ea_genvat,elstruct(el).coords_mm,getappdata(handles.stimfig,'S'),side,options,stimname,options.prefs.machine.vatsettings.aniso_ethresh,handles.stimfig);
 %
 % TODO: clean the code from commented lines
-% TODO: make the load of the dti tensor clean (now a variable called 'DTI' is loaded and then substituted by one called 'dti')
-% TODO: make it monopolar, or make it work with more than one contact
-%       stimulating
-% TODO: make the substitution of the electrode conductivity faster
 % TODO: test w/ and w/o block at line 664
+% TODO: check w/ dbg_fast = 1
 % 
 
 
@@ -52,7 +49,7 @@ clear varargin
 dbg_vis = 0;  % flag to state if data visualization for debugging is to be run
 dbg_recompute = 0;  % flag to state if the model has to be recomputed all the times (1) or not (0)
 dbg_fast = 0;  % flag which if set to 0 makes the model faster to be computed, but less accurate
-dbg = 0;  % enter in debug mode if set to 1
+dbg = 1;  % enter in debug mode if set to 1
 
 if dbg; tic; end
 recompute = options.overwriteapproved || dbg_recompute;  % the user can also use the checkbox in the LEAD-DBS menu to recompute the model all the times
@@ -63,6 +60,11 @@ encaps = options.prefs.machine.vatsettings.aniso_encaps;  % flag to determine if
 SI = 0;  % flag to determine if to use the International System or not, i.e. if to use m (1) or mm (0). Whenever this flag is changed, the model must be recomputed
 tensor_name = get(options.prefs.machine.vatsettings.aniso_tensor_name,'String');
 dti_tensor = tensor_name;  % name of the file containing the diffusion tensor, "dti_tensor.mat default
+
+% check if the directory for anisotropic models storage already exists
+if not(exist([options.root,options.patientname,filesep,'stimulations',filesep,'aniso_models']) == 7)  % if not(it exists AND it is a folder)
+    mkdir([options.root,options.patientname,filesep,'stimulations',filesep,'aniso_models']);
+end
 
 % check if the diffusion tensor exists in patient folder and has a supported data structure (.mat ot .nii)
 if not(exist([options.root,options.patientname,filesep,dti_tensor], 'file') == 2)
@@ -135,11 +137,11 @@ end
     else
         error("The considered side is neither 1 (right) or 2 (left). Check the call to ea_genvat_aniso function is done properly")
     end
-if (exist([options.root, options.patientname, filesep, 'stimulations', filesep, 'mesh_', rl, '.mat'], 'file') == 2) && not(recompute)
+if (exist([options.root, options.patientname, filesep, 'stimulations', filesep,'aniso_models', filesep, 'mesh_', rl, '.mat'], 'file') == 2) && not(recompute)
     if dbg
-        load([options.root, options.patientname, filesep, 'stimulations', filesep, 'mesh_', rl, '.mat'], 'cylinder', 'T', 'vol', 'electrode', 'contacts_vertices', 'encaps_index', 'elmodel', 'elrad')
+        load([options.root, options.patientname, filesep, 'stimulations', filesep,'aniso_models', filesep, 'mesh_', rl, '.mat'], 'cylinder', 'T', 'vol', 'electrode', 'contacts_vertices', 'encaps_index', 'elmodel', 'elrad')
     else
-        load([options.root, options.patientname, filesep, 'stimulations', filesep, 'mesh_', rl, '.mat'], 'vol', 'T', 'electrode', 'contacts_vertices', 'encaps_index', 'elmodel', 'elrad')
+        load([options.root, options.patientname, filesep, 'stimulations', filesep,'aniso_models', filesep, 'mesh_', rl, '.mat'], 'vol', 'T', 'electrode', 'contacts_vertices', 'encaps_index', 'elmodel', 'elrad')
     end
 % ortherwise compute it 
 else
@@ -214,7 +216,6 @@ else
     % (surface, containing info on insulation or contact)
     [~,~,T,electrode]=ea_buildelfv(elspec,elstruct,side);  % T is the transformation between model space and patient space
 
-    
 % ##########
 %     %% ________________________________________________________________________
 %     %% cut the electrode at the size of the bounding cylinder
@@ -300,7 +301,7 @@ else
     
     %% ________________________________________________________________________
     %% SAVE VOLUME AND RELATED VARIABLES    
-    save([options.root, options.patientname, filesep, 'stimulations', filesep, 'mesh_', rl, '.mat'], 'vol', 'cylinder', 'T', 'electrode', 'encaps_index', 'elmodel', 'elrad')
+    save([options.root, options.patientname, filesep, 'stimulations', filesep,'aniso_models', filesep, 'mesh_', rl, '.mat'], 'vol', 'cylinder', 'T', 'electrode', 'encaps_index', 'elmodel', 'elrad')
 
 end
 
@@ -316,8 +317,8 @@ elseif side==2
 else
     error("The considered side is neither 1 (right) or 2 (left). Check the call to ea_genvat_aniso function is done properly")
 end
-if (exist([options.root, options.patientname, filesep, 'stimulations', filesep, 'conduction_model_', rl, '.mat'], 'file') == 2) && not(recompute)
-    load([options.root, options.patientname, filesep, 'stimulations', filesep, 'conduction_model_', rl, '.mat'], 'vol', 'cond', 'el_cond')
+if (exist([options.root, options.patientname, filesep, 'stimulations', filesep,'aniso_models', filesep, 'conduction_model_', rl, '.mat'], 'file') == 2) && not(recompute)
+    load([options.root, options.patientname, filesep, 'stimulations', filesep,'aniso_models', filesep, 'conduction_model_', rl, '.mat'], 'vol', 'cond', 'el_cond')
 else
     %% read image
     ea_dispt('Reading images...')
@@ -330,9 +331,9 @@ else
     
     % load diffusion tensor
     if isequal(dti_tensor(end-3:end),'.nii')
-        dti = niftiread(dti_tensor);
+        dti = niftiread([options.root,options.patientname,filesep,dti_tensor]);
     else
-        load([options.root,options.patientname,filesep,'dti_tensor.mat'],'dti');
+        load([options.root,options.patientname,filesep,dti_tensor],'dti');
     end
     
 
@@ -393,7 +394,9 @@ else
     end
     
     if dbg
+        options.savepath = [options.root, options.patientname, filesep, 'stimulations', filesep, 'aniso_models'];
         isotropic_conductivity_stn = teststn(vol, cond, side, options);  % it is returned in S/mm
+        rmfield(options, 'savepath')
         fprintf("\nDEBUG ________________________________________________________\n")
         fprintf("The average isotropic conductivity in the STN is %f S/m\n", isotropic_conductivity_stn*1e3)
         fprintf("This value is only reliable in native space\n");
@@ -540,7 +543,7 @@ else
     else
         error("The considered side is neither 1 (right) or 2 (left). Check the calling to ea_genvat_aniso function is done properly")
     end
-    save([options.root, options.patientname, filesep, 'stimulations', filesep, 'conduction_model_', rl, '.mat'], 'vol', 'cond', 'el_cond', '-v7.3')
+    save([options.root, options.patientname, filesep, 'stimulations', filesep,'aniso_models', filesep, 'conduction_model_', rl, '.mat'], 'vol', 'cond', 'el_cond', '-v7.3')
 end
 
 
