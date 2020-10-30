@@ -5,8 +5,7 @@ function varargout = ea_genvat_aniso(varargin)
 % [stimparams(1,side).VAT(el).VAT,volume]=feval(ea_genvat,elstruct(el).coords_mm,getappdata(handles.stimfig,'S'),side,options,stimname,options.prefs.machine.vatsettings.aniso_ethresh,handles.stimfig);
 %
 % TODO: clean the code from commented lines
-% TODO: test w/ and w/o block at line 664
-% TODO: check w/ dbg_fast = 1
+% TODO: make a decision regarding code at 390-395 and 702
 % 
 
 
@@ -45,9 +44,9 @@ end
 
 clear varargin
 
-%% debug settings
+%% debug
 dbg_vis = 0;  % flag to state if data visualization for debugging is to be run
-dbg_recompute = 0;  % flag to state if the model has to be recomputed all the times (1) or not (0)
+dbg_recompute = 1;  % flag to state if the model has to be recomputed all the times (1) or not (0)
 dbg_fast = 0;  % flag which if set to 0 makes the model faster to be computed, but less accurate
 dbg = 1;  % enter in debug mode if set to 1
 
@@ -258,12 +257,13 @@ else
     elmodel.node = T*[elmodel.node, ones(size(elmodel.node,1),1)]';
     elmodel.node = elmodel.node(1:3,:)';
 
-% ##########
-%     % put together the mesh containing all the contacts in the electrode
-%     contacts_vertices = [];
-%     for i=1:length(electrode.contacts)
-%         contacts_vertices = [contacts_vertices; electrode.contacts(i).vertices]; 
-%     end
+    if dbg_fast
+        % put together the mesh containing all the contacts in the electrode
+        contacts_vertices = [];
+        for i=1:length(electrode.contacts)
+            contacts_vertices = [contacts_vertices; electrode.contacts(i).vertices]; 
+        end
+    end
 
 
     %% ________________________________________________________________________
@@ -386,8 +386,14 @@ else
 % ##########
     % rearrange columns of the conductivity as simbio wants them in the order
     % xx, yy, zz, xy, yz, xz while fsl gives in output xx xy xz yy yz zz
-%     cond = [cond(:,1), cond(:,4), cond(:,6), cond(:,2), cond(:,5), cond(:,3)];  #####
-%     cond(:,1:3) = abs(cond(:,1:3));  #####
+     cond = [cond(:,1), cond(:,4), cond(:,6), cond(:,2), cond(:,5), cond(:,3)];  % #####
+%     cond(:,1:3) = abs(cond(:,1:3));  % #####
+    noisy_elements = false(size(cond,1),1);
+    for i=1:3
+        noisy_elements = noisy_elements | (cond(:,1)<0);
+    end
+    cond(noisy_elements,1:3) = zeros([length(find(noisy_elements)),3]) + eps;
+    noisy_nodes = unique(vol.tet(noisy_elements));
      
     if not(dbg)
         clear cond3d cond_tensor cond_index raw_cond_tensor i
@@ -427,6 +433,12 @@ else
     end
     cond(el_cond,:) = repmat([repmat(cond_insulation,1,3) zeros(1,3)], length(el_cond), 1);  %#ok<FNDSB> % insulation conductivity (isotropic)
 
+    % use this information to label the nodes which belong to the
+    % electrode, in order to make it easier to remove them from VTA.
+    % TODO: This approach will only be used in a future version
+    vol.tissue = zeros(size(vol.pos,1),1);
+    vol.tissue(unique(vol.tet(el_cond,:))) = 3;  % 0: patient data; 3: insulation; (the values are taken to make ea_write_vta_nii work properly)
+    
     % add encapsulation layer (fibrotic tissue forming around the electrodes)
     if encaps
         cond(encaps_index,:) = repmat([repmat(cond_encapsulation,1,3) zeros(1,3)], length(encaps_index),1);
@@ -461,6 +473,9 @@ else
         con_cond = find(inside_active_contacts);
     end
     cond(con_cond,:) = repmat([repmat(cond_contacts,1,3) zeros(1,3)], length(con_cond), 1);  % contact conductivity (isotropic)  
+    
+    % use this information to label the nodes which belong to the contacts
+    vol.tissue(unique(vol.tet(con_cond,:))) = 4;  % 4: contacts;
     
     if SI
         % convert from mm to m
@@ -522,10 +537,8 @@ else
     end
     
     negative_diag_stiff = find(stiff_diag<0);
-    if not(isempty(negative_diag_stiff)) && not(dbg)
-        warning("Error in the conductivity values, some of the conductivity values are negative")
-    end
     if not(isempty(negative_diag_stiff))
+        warning("Error in the conductivity values, some of the conductivity values are negative")
         for i=1:length(negative_diag_stiff)                         % I had to arrange the check this way, 
             j = negative_diag_stiff(i);                             % otherwise MATLAB gives problems of 
             vol.stiff(j,j) = abs(vol.stiff(j,j));                   % memory outage (8GB RAM)
@@ -585,7 +598,7 @@ gradient = cell(length(S.sources), 1);
 
 %%
 active_coords = [];
-for source = S.sources  % ##### TODO: check if this block allows for multipolar stimulation, although it was not required by the project #####
+for source = S.sources
     active_contacts = [];
     ix = [];
     voltix = [];
@@ -672,7 +685,7 @@ for source = S.sources  % ##### TODO: check if this block allows for multipolar 
 %         tmp = sort(abs(gradient{source}),'descend');
 %         gradient{source}(elec_tet_ix,:) = repmat(mean(tmp(1:ceil(length(tmp(:,1))*0.001),:)),[length(elec_tet_ix),1]); % choose mean of highest 0.1% as new efield value
 %         clear tmp
-
+ 
     else
         % if the source is not active, the solution is trivial
         gradient{source} = zeros(size(vol.tet,1),3);
@@ -685,6 +698,7 @@ end
 
 % combine gradients from all sources
 gradient=gradient{1}+gradient{2}+gradient{3}+gradient{4}; 
+gradient(noisy_nodes) = 0;  % #####
 
 % ##########
 % if SI
@@ -712,11 +726,11 @@ if dbg_vis
 end
 
 
-% % ##### block below added #####
 %% remove electrode
+% TODO: this first removal of the electrode nodes will be removed in a future version
 if options.prefs.machine.vatsettings.aniso_removeElectrode
     gradient(el_cond,:) = 0;
-    options.prefs.machine.vatsettings.aniso_removeElectrode = 0;
+    options.prefs.machine.vatsettings.aniso_removeElectrode = 0;  
 end
 
 
