@@ -46,9 +46,9 @@ clear varargin
 
 %% debug
 dbg_vis = 0;  % flag to state if data visualization for debugging is to be run
-dbg_recompute = 1;  % flag to state if the model has to be recomputed all the times (1) or not (0)
+dbg_recompute = 0;  % flag to state if the model has to be recomputed all the times (1) or not (0)
 dbg_fast = 0;  % flag which if set to 0 makes the model faster to be computed, but less accurate
-dbg = 1;  % enter in debug mode if set to 1
+dbg = 0;  % enter in debug mode if set to 1
 
 if dbg; tic; end
 recompute = options.overwriteapproved || dbg_recompute;  % the user can also use the checkbox in the LEAD-DBS menu to recompute the model all the times
