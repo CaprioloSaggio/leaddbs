@@ -5,7 +5,7 @@ function varargout = ea_genvat_aniso(varargin)
 % [stimparams(1,side).VAT(el).VAT,volume]=feval(ea_genvat,elstruct(el).coords_mm,getappdata(handles.stimfig,'S'),side,options,stimname,options.prefs.machine.vatsettings.aniso_ethresh,handles.stimfig);
 %
 % TODO: clean the code from commented lines
-% TODO: make a decision regarding code at 390-395 and 702
+% TODO: make a decision regarding code at 392-397 and 704
 % 
 
 
@@ -386,14 +386,15 @@ else
 % ##########
     % rearrange columns of the conductivity as simbio wants them in the order
     % xx, yy, zz, xy, yz, xz while fsl gives in output xx xy xz yy yz zz
-     cond = [cond(:,1), cond(:,4), cond(:,6), cond(:,2), cond(:,5), cond(:,3)];  % #####
+%     cond = [cond(:,1), cond(:,4), cond(:,6), cond(:,2), cond(:,5), cond(:,3)];  % #####
 %     cond(:,1:3) = abs(cond(:,1:3));  % #####
-    noisy_elements = false(size(cond,1),1);
-    for i=1:3
-        noisy_elements = noisy_elements | (cond(:,1)<0);
-    end
-    cond(noisy_elements,1:3) = zeros([length(find(noisy_elements)),3]) + eps;
-    noisy_nodes = unique(vol.tet(noisy_elements));
+
+%     noisy_elements = false(size(cond,1),1);  % #####
+%     for i=1:3  % #####
+%         noisy_elements = noisy_elements | (cond(:,1)<0);  % #####
+%     end  % #####
+%     cond(noisy_elements,1:3) = zeros([length(find(noisy_elements)),3]) + eps;  % #####
+%     noisy_nodes = unique(vol.tet(noisy_elements));  % #####
      
     if not(dbg)
         clear cond3d cond_tensor cond_index raw_cond_tensor i
@@ -698,7 +699,7 @@ end
 
 % combine gradients from all sources
 gradient=gradient{1}+gradient{2}+gradient{3}+gradient{4}; 
-gradient(noisy_nodes) = 0;  % #####
+% gradient(noisy_nodes) = 0;  % #####
 
 % ##########
 % if SI
