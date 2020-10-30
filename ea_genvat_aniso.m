@@ -694,7 +694,7 @@ for source = S.sources
 end
 
 if not(dbg)
-    clear voltix_new U activeidx elec_tet_ix ac con active_contacts voltix ix stimsource vol_active
+    clear voltix_new U activeidx elec_tet_ix ac con active_contacts ix stimsource vol_active
 end
 
 % combine gradients from all sources
