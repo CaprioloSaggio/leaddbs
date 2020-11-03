@@ -35,7 +35,7 @@ end
 
 % read the image
 % TODO: ask Alba if it makes sense to have negative values in a diffusion image
-S = niftiread(diffusion_image_path);
+S = ea_load_nii(diffusion_image_path);
 % bias = min(dti,[],'all');
 % if bias < 0
 %     S = S + bias;

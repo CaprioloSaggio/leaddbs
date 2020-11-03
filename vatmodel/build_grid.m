@@ -1,6 +1,6 @@
 function nodes = build_grid(mri)
 % INPUT:
-% mri: 3D image data obtained by using MRIread
+% mri: 3D image data obtained by using ea_load_nii
 % 
 % OUTPUT:
 % nodes: nodes of a equispaced grid along the whole volume of the image

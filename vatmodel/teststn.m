@@ -12,7 +12,7 @@ catch
     stnr = atlases.fv{1, 2}.vertices;
     save([options.root, options.patientname, filesep, 'atlases', filesep, options.atlasset, filesep, 'stn.mat'], 'stnl', 'stnr');
     % load stn points
-    load stn
+    load([options.root, options.patientname, filesep, 'atlases', filesep, options.atlasset, filesep, 'stn.mat']);
 end
 
 % select side

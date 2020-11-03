@@ -48,7 +48,7 @@ clear varargin
 dbg_vis = 0;  % flag to state if data visualization for debugging is to be run
 dbg_recompute = 0;  % flag to state if the model has to be recomputed all the times (1) or not (0)
 dbg_fast = 0;  % flag which if set to 0 makes the model faster to be computed, but less accurate
-dbg = 0;  % enter in debug mode if set to 1
+dbg = 1;  % enter in debug mode if set to 1
 
 if dbg; tic; end
 recompute = options.overwriteapproved || dbg_recompute;  % the user can also use the checkbox in the LEAD-DBS menu to recompute the model all the times
@@ -577,6 +577,18 @@ ea_dispt('Computing the potential based on stimulation...')
 %     title('boundary nodes')
 %     legend('nodes inside the volume of interest','boundary nodes', 'location', 'northeast')
 % end
+
+if dbg && (exist([options.root, options.patientname, filesep, 'snr_filtered.nii.gz'], 'file') == 2)
+    anat = dir([options.root, options.patientname, filesep, options.prefs.prenii_searchstring]);
+    anat = [options.root,options.patientname,filesep,anat(1).name];  % anat is the path to the file called (usually) anat_t1.nii in the patient folder
+    mri = ea_load_nii(anat);
+    [mean_snr_vol, mean_snr_stn] = testsnr(vol, mri, side, options);
+    fprintf("\nDEBUG ________________________________________________________\n")
+    fprintf("The average SNR in the STN is %f\n", mean_snr_stn)
+    fprintf("The average SNR in the volume is %f\n", mean_snr_vol)
+    fprintf("This value is only reliable in native space\n");
+    fprintf("______________________________________________________________\n\n\n")
+end
 
 
 %% define sources and contacts
