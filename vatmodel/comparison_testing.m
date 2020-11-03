@@ -4,8 +4,8 @@ tic
 % paths
 reference_image_path = 'C:\Users\Notebook\Desktop\Downloads\DBS\03_Data\WF\anat_t1.nii';
 patient_path = 'C:\Users\Notebook\Desktop\Downloads\DBS\03_Data\WF\stimulations\native';
-save_filename = 'unit_testing.txt';
-methods = {'horn'; 'anisohorn'};
+save_filename = 'comparison_testing.txt';
+methods = {'horn'; 'aniso'};
 direction = {'dir', 'ring'};
 amplitude = [1 3 5];
 unit = {'mA', 'V'};
@@ -50,7 +50,8 @@ for i_direction = 1:length(direction)
                 binary_anisohorn = zeros(reference_image.dim);
                 binary_anisohorn(vta_index) = 1;
                 
-                volume_difference(i_side, i_amplitude, i_unit, i_direction) = abs(data_aniso.vatvolume - data_horn.vatvolume) / data_horn.vatvolume;
+                % compute indices
+                volume_difference(i_side, i_amplitude, i_unit, i_direction) = (data_horn.vatvolume - data_aniso.vatvolume) / data_horn.vatvolume;
                 dice_index(i_side, i_amplitude, i_unit, i_direction) = dice(binary_horn, binary_anisohorn);
             end
         end
