@@ -3,9 +3,6 @@ function varargout = ea_genvat_aniso(varargin)
 % this function is called at line 1059 of function ea_stimparams.m in the
 % following fashion:
 % [stimparams(1,side).VAT(el).VAT,volume]=feval(ea_genvat,elstruct(el).coords_mm,getappdata(handles.stimfig,'S'),side,options,stimname,options.prefs.machine.vatsettings.aniso_ethresh,handles.stimfig);
-%
-% TODO: clean the code from commented lines
-% TODO: make a decision regarding code at 392-397 and 704
 % 
 
 
@@ -46,7 +43,7 @@ clear varargin
 
 %% debug
 dbg_vis = 0;  % flag to state if data visualization for debugging is to be run
-dbg_recompute = 0;  % flag to state if the model has to be recomputed all the times (1) or not (0)
+dbg_recompute = 1;  % flag to state if the model has to be recomputed all the times (1) or not (0)
 dbg_fast = 0;  % flag which if set to 0 makes the model faster to be computed, but less accurate
 dbg = 1;  % enter in debug mode if set to 1
 
@@ -100,10 +97,6 @@ elstruct(1).markers=markers;
 elspec=getappdata(resultfig,'elspec');
 coords=coords{side};
 setappdata(resultfig,'elstruct',elstruct);
-
-% ##########
-% coords_m{1, 1} = coords_mm{1, 1} / 1e3;  % from mm to m
-% coords_m{1, 2} = coords_mm{1, 2} / 1e3;
 
 % Add stretchfactor to elstruct simply for purpose of checking if headmodel
 % changed. Larger stim amplitudes need larger bounding boxes so
@@ -214,22 +207,6 @@ else
     % compute transformation from general to patient specific electrode model
     % (surface, containing info on insulation or contact)
     [~,~,T,electrode]=ea_buildelfv(elspec,elstruct,side);  % T is the transformation between model space and patient space
-
-% ##########
-%     %% ________________________________________________________________________
-%     %% cut the electrode at the size of the bounding cylinder
-%     if not(refine)
-%         elmodel.node(elmodel.node(:,3)>cylinder.upper_bound | elmodel.node(:,3)<cylinder.lower_bound, :) = [];
-% 
-%         if dbg_vis
-%         %     elmodel.ctr = tetctr(elmodel.node, elmodel.face+1);  % find the centroids of the electrode elements
-%             figure
-%             plot3(elmodel.node(:,1), elmodel.node(:,2), elmodel.node(:,3), 'bx');
-%         %     plot3(elmodel.ctr(:,1), elmodel.ctr(:,2), elmodel.ctr(:,3), 'bx');
-%             hold on
-%             plot3(vol.pos(:,1), vol.pos(:,2), vol.pos(:,3), 'ro')
-%         end
-%     end
 
 
     %% ________________________________________________________________________
@@ -344,7 +321,7 @@ else
     end
 
     % build grid from volume 
-    mesh_grid.pos = build_grid(mri);
+    mesh_grid.pos = ea_build_grid(mri);
     
     if not(dbg)
         clear mri anat
@@ -382,19 +359,6 @@ else
     
     % select only the conductivities that match elements in the tetrahedral mesh
     cond = cond_tensor(cond_index, :);
-
-% ##########
-    % rearrange columns of the conductivity as simbio wants them in the order
-    % xx, yy, zz, xy, yz, xz while fsl gives in output xx xy xz yy yz zz
-%     cond = [cond(:,1), cond(:,4), cond(:,6), cond(:,2), cond(:,5), cond(:,3)];  % #####
-%     cond(:,1:3) = abs(cond(:,1:3));  % #####
-
-%     noisy_elements = false(size(cond,1),1);  % #####
-%     for i=1:3  % #####
-%         noisy_elements = noisy_elements | (cond(:,1)<0);  % #####
-%     end  % #####
-%     cond(noisy_elements,1:3) = zeros([length(find(noisy_elements)),3]) + eps;  % #####
-%     noisy_nodes = unique(vol.tet(noisy_elements));  % #####
      
     if not(dbg)
         clear cond3d cond_tensor cond_index raw_cond_tensor i
@@ -403,7 +367,7 @@ else
     if dbg
         options.savepath = [options.root, options.patientname, filesep, 'stimulations', filesep, 'aniso_models'];
         isotropic_conductivity_stn = teststn(vol, cond, side, options);  % it is returned in S/mm
-        rmfield(options, 'savepath')
+        rmfield(options, 'savepath');
         fprintf("\nDEBUG ________________________________________________________\n")
         fprintf("The average isotropic conductivity in the STN is %f S/m\n", isotropic_conductivity_stn*1e3)
         fprintf("This value is only reliable in native space\n");
@@ -420,15 +384,9 @@ else
     cond_insulation = options.prefs.machine.vatsettings.aniso_cond_insulation;  % 1e-16 * 1e-3 S/mm default
     cond_encapsulation = options.prefs.machine.vatsettings.aniso_cond_encapsulation;  % according to Gunalan et al 2017 it can be 0.05±0.2 S/m
 
-    % el_cond = unique(knnsearch(vol.ctr, elmodel.ctr));
     if dbg_fast
         el_cond = unique(knnsearch(vol.ctr, elmodel.node, 'K', 5));  % index of all the elements in cylinder corresponding to electrode contacts   
     else
-% ##########        
-%         el_cond = [];
-%         for i=1:length(electrode.insulation)
-%             el_cond = [el_cond; find(insurface(electrode.insulation(i).vertices*1e3, electrode.insulation(i).faces, vol.ctr*1e3))];
-%         end
         el_cond = find(insurface(elmodel.node, elmodel.face(:,1:3), vol.ctr));
         el_cond = unique(el_cond);
     end
@@ -451,26 +409,8 @@ else
     else
         inside_active_contacts = false(size(vol.ctr,1),1);
         for c=1:length(electrode.contacts)
-            inside_active_contacts = [inside_active_contacts | insurface(electrode.contacts(c).vertices*1e3, electrode.contacts(c).faces, vol.ctr*1e3)]; % #####
+            inside_active_contacts = [inside_active_contacts | insurface(electrode.contacts(c).vertices*1e3, electrode.contacts(c).faces, vol.ctr*1e3)];
         end
-% ##########     
-%         active_contacts = find(S.activecontacts{1,side});
-%         contact_source = zeros(length(active_contacts),1);
-%         for c = active_contacts  % 1:length(electrode.contacts)
-%             inside_active_contacts = [inside_active_contacts | insurface(electrode.contacts(c).vertices*1e3, electrode.contacts(c).faces, vol.ctr*1e3)]; % #####
-% %             inside_active_contacts = inside_active_contacts | inpolyhedron(electrode.contacts(c), vol.ctr); % #####
-% 
-% %             active_contacts_coords = electrode.contacts(c).vertices;  % in mm  % #####
-% %             vol.active = unique(knnsearch(vol.pos, active_contacts_coords));  % #####
-% %             contact_source = ea_find_elec_center(vol.active(c), vol.pos);  % #####
-% %             inside_active_contacts(inside_active_contacts==contact_source) = [];  % #####
-% %             clear vol.active  % #####
-% 
-% %             active_pos = unique(knnsearch(vol.pos, electrode.contacts(c).vertices));
-% %             center_id = ea_find_elec_center(active_pos, vol.pos);
-% %             inside_active_contacts(any((vol.tet==center_id)')) = 0;
-% 
-%         end
         con_cond = find(inside_active_contacts);
     end
     cond(con_cond,:) = repmat([repmat(cond_contacts,1,3) zeros(1,3)], length(con_cond), 1);  % contact conductivity (isotropic)  
@@ -502,24 +442,14 @@ else
     %% ________________________________________________________________________
     %% COMPUTE CONDUCTION MODEL
     ea_dispt('Computing the conduction model...')
-
-% ##########
-%     test = cond;
-%     cond = cond(:,1);  % #####
     
     try
         vol.stiff = ea_sb_stiff_matrix(cond, vol);
-% ##########
-%         vol.stiff = simbio_stiff_matrix(cond, vol);
-    %     vol.stiff = sb_calc_stiff(cond, vol);
     catch
         vol.tet(:, [3, 4]) = vol.tet(:, [4, 3]);  % necessary not to get 
                                                   % an error from sb_calc_stiff 
                                                   % relative to orientation
         vol.stiff = ea_sb_stiff_matrix(cond, vol);
-% ##########
-%         vol.stiff = simbio_stiff_matrix(cond, vol);
-    %     vol.stiff = sb_calc_stiff(cond, vol);
     end
     vol.method = 'simbio'; 
 
@@ -564,31 +494,6 @@ end
 %% ________________________________________________________________________
 %% COMPUTE POTENTIAL AND ELECTRIC FIELD (ITS GRADIENT)
 ea_dispt('Computing the potential based on stimulation...')
-
-% ##########
-% %% find boundary points in the volume of interest
-% % TODO: include this section in the function to build the cylinder mesh (it should speed up a little)
-% vol.boundary = unique(boundary(vol.pos(:,1), vol.pos(:,2), vol.pos(:,3)));
-% if dbg_vis
-%     figure 
-%     plot3(vol.pos(:,1), vol.pos(:,2), vol.pos(:,3), 'b.')
-%     hold on
-%     plot3(vol.pos(vol.boundary, 1), vol.pos(vol.boundary, 2), vol.pos(vol.boundary, 3), 'r.')
-%     title('boundary nodes')
-%     legend('nodes inside the volume of interest','boundary nodes', 'location', 'northeast')
-% end
-
-if dbg && (exist([options.root, options.patientname, filesep, 'snr_filtered.nii.gz'], 'file') == 2)
-    anat = dir([options.root, options.patientname, filesep, options.prefs.prenii_searchstring]);
-    anat = [options.root,options.patientname,filesep,anat(1).name];  % anat is the path to the file called (usually) anat_t1.nii in the patient folder
-    mri = ea_load_nii(anat);
-    [mean_snr_vol, mean_snr_stn] = testsnr(vol, mri, side, options);
-    fprintf("\nDEBUG ________________________________________________________\n")
-    fprintf("The average SNR in the STN is %f\n", mean_snr_stn)
-    fprintf("The average SNR in the volume is %f\n", mean_snr_vol)
-    fprintf("This value is only reliable in native space\n");
-    fprintf("______________________________________________________________\n\n\n")
-end
 
 
 %% define sources and contacts
@@ -686,18 +591,6 @@ for source = S.sources
     if ~(isempty(active_contacts))          
         potential = ea_apply_dbs(vol,ix,voltix,unipolar,constvol,vol.boundary); % output in V. 4 indexes insulating material.
         gradient{source} = ea_calc_gradient(vol,potential);
-
-% % ##### block below was commented #####
-%         %% get high EF values for active electrodes
-%         % this can be adjusted by assigning all the tetrahedra belonging to the
-%         % active electrode a new value: gradient{source}(elec_tet_ix,:) = new_value;
-%         elec_tet_ix = sub2ind(size(vol.pos), vertcat(ix,ix,ix), vertcat(ones(length(ix),1), ones(length(ix),1).*2, ones(length(ix),1).*3));
-%         elec_tet_ix = find(sum(ismember(vol.tet,elec_tet_ix),2)==4);
-% 
-%         % gradient{source}(elec_tet_ix,:) = repmat(max(gradient{source}),[length(elec_tet_ix),1]); %assign maximum efield value
-%         tmp = sort(abs(gradient{source}),'descend');
-%         gradient{source}(elec_tet_ix,:) = repmat(mean(tmp(1:ceil(length(tmp(:,1))*0.001),:)),[length(elec_tet_ix),1]); % choose mean of highest 0.1% as new efield value
-%         clear tmp
  
     else
         % if the source is not active, the solution is trivial
@@ -712,17 +605,6 @@ end
 % combine gradients from all sources
 gradient=gradient{1}+gradient{2}+gradient{3}+gradient{4}; 
 % gradient(noisy_nodes) = 0;  % #####
-
-% ##########
-% if SI
-% % #####
-% % convert back from m to mm
-% vol.pos = vol.pos * 1e3;
-% vol.ctr = vol.ctr * 1e3;
-% vol.r = vol.r * 1e3;
-% vol.unit = 'mm';
-% % #####
-% end
 
 
 %% ________________________________________________________________________
@@ -740,7 +622,7 @@ end
 
 
 %% remove electrode
-% TODO: this first removal of the electrode nodes will be removed in a future version
+% TODO: removal of the electrode nodes ought to be updated in a future version
 if options.prefs.machine.vatsettings.aniso_removeElectrode
     gradient(el_cond,:) = 0;
     options.prefs.machine.vatsettings.aniso_removeElectrode = 0;  
@@ -913,3 +795,93 @@ normal = cross(vol.pos(vol.tet(:,3),:)-vol.pos(vol.tet(:,2),:),vol.pos(vol.tet(:
 gradient = gradient + repmat(potential(vol.tet(:,4))./sum(normal.*(vol.pos(vol.tet(:,4),:)-(vol.pos(vol.tet(:,1),:)+vol.pos(vol.tet(:,2),:)+vol.pos(vol.tet(:,3),:))/3),2),1,3).*normal;
 end  % subfunction
 
+
+
+% the following 3 functions contitutes a block that assesses the
+% conductivity in the STN and outputs it both as .mat file and to the
+% console
+function mean_isotropic_conductivity_stn = teststn(vol, cond, side, options)
+
+% Here's how to check the conductivity values of the STN (subthalamic 
+% nucleus), expected to be around 0.33, as it is grey matter
+
+try
+    load([options.root, options.patientname, filesep, 'atlases', filesep, options.atlasset, filesep, 'stn.mat']); %#ok<*LOAD>
+catch
+    % find STN data
+    load([options.root, options.patientname, filesep, 'atlases', filesep, options.atlasset, filesep, 'atlas_index.mat']);
+    stnl = atlases.fv{1, 1}.vertices;
+    stnr = atlases.fv{1, 2}.vertices;
+    save([options.root, options.patientname, filesep, 'atlases', filesep, options.atlasset, filesep, 'stn.mat'], 'stnl', 'stnr');
+    % load stn points
+    load([options.root, options.patientname, filesep, 'atlases', filesep, options.atlasset, filesep, 'stn.mat']);
+end
+
+% select side
+if side == 1
+    stn = stnl;
+elseif side == 2
+    stn = stnr;
+end
+
+% find conductivity in the STN
+vol_stn = unique(knnsearch(vol.ctr, stn));
+cond_stn = cond(vol_stn, :);
+
+% compute anisotropic index and equivalent isotropic conductivity
+isotropic_conductivity_stn = zeros([size(cond_stn,1),1]);
+aniso_index = zeros([size(cond_stn,1),1]);
+for i = 1:size(cond_stn,1)
+    isotropic_conductivity_stn(i) = isoCond(cond_stn(i,:));
+    S = makeSymmetric(cond_stn(i,:));
+    [~,D] = eig(S);
+    D = diag(D);
+    D = sort(D, 'descend');  % order eigenvalues from the highest to the lowest
+    aniso_index(i) = 1 - (D(3) / D(1));
+end
+
+% compute summary values for the whole stn volume
+% mean_cond_stn = mean(cond_stn);
+% mean_isotropic_conductivity_stn = isoCond(mean_cond_stn);
+mean_isotropic_conductivity_stn = mean(isotropic_conductivity_stn);
+mean_aniso_index = mean(aniso_index); %#ok<NASGU>
+
+% save interesting variables
+clear i S D
+if options.savepath(end) == filesep
+    options.savepath(end) = [];
+end
+save([options.savepath, filesep, 'teststn',num2str(side),'_output.mat']);
+
+end  % subfunction
+
+
+function I = isoCond(condArray)
+% 
+% Returns the equivalent isotropic conductivity I of the array condArray 
+% describing the ellipsoid for the anisotropic conductivity
+% 
+
+S = makeSymmetric(condArray);
+[~,D] = eig(S);
+D = diag(D);
+I = (prod(D))^(1/3);
+
+end  % subfunction
+
+
+
+function S33 = makeSymmetric(array6)
+
+S33 = zeros(3);
+S33(1,1) = array6(1);
+S33(2,2) = array6(2);
+S33(3,3) = array6(3);
+S33(1,3) = array6(6);
+S33(3,1) = array6(6);
+S33(1,2) = array6(4);
+S33(2,3) = array6(5);
+S33(3,2) = array6(5);
+S33(2,1) = array6(4);
+
+end  % subfunction

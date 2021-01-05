@@ -1,4 +1,4 @@
-function dti = extract_tensor(diffusion_image_path, bvals, bvecs)
+function dti = ea_extract_tensor(diffusion_image_path, bvals, bvecs)
 % 
 % INPUT:
 % diffusion_image_path: the path to the diffusion image of which we want to
